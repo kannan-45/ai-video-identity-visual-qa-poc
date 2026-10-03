@@ -1,0 +1,58 @@
+{
+  "module": "identity_visual_qa",
+  "version": "0.1",
+  "fixtures": [
+    {
+      "id": "identity_positive_same_photo",
+      "reference": "inputs/adaface/reference/reference_adaface.jpeg",
+      "generated": "inputs/adaface/generated/generated_identical.jpeg",
+      "expected_identity": "SAME_IDENTITY",
+      "expected_decision": "PASS",
+      "type": "positive"
+    },
+    {
+      "id": "identity_positive_different_photo",
+      "reference": "inputs/adaface/reference/reference_adaface.jpeg",
+      "generated": "inputs/adaface/generated/generated_same_identity.jpeg",
+      "expected_identity": "SAME_IDENTITY",
+      "expected_decision": "FAIL",
+      "failure": "visual_difference",
+      "type": "positive_identity_negative_visual"
+    },
+    {
+      "id": "visual_brightness_change",
+      "reference": "inputs/adaface/reference/reference_adaface.jpeg",
+      "generated": "inputs/adaface/generated/generated_brightness.jpeg",
+      "expected_identity": "SAME_IDENTITY",
+      "expected_decision": "PASS",
+      "type": "positive"
+    },
+    {
+      "id": "visual_moderate_blur",
+      "reference": "inputs/adaface/reference/reference_adaface.jpeg",
+      "generated": "inputs/adaface/generated/generated_moderate_blur.jpeg",
+      "expected_identity": "DIFFERENT_IDENTITY",
+      "expected_decision": "FAIL",
+      "failure": "blur",
+      "type": "failure"
+    },
+    {
+      "id": "visual_heavy_blur",
+      "reference": "inputs/adaface/reference/reference_adaface.jpeg",
+      "generated": "inputs/adaface/generated/generated_heavy_blur.jpeg",
+      "expected_identity": "GENERATED_FACE_MISSING",
+      "expected_decision": "FAIL",
+      "failure": "severe_blur",
+      "type": "failure"
+    },
+    {
+      "id": "visual_crop_change",
+      "reference": "inputs/adaface/reference/reference_adaface.jpeg",
+      "generated": "inputs/adaface/generated/generated_crop.jpeg",
+      "expected_identity": "SAME_IDENTITY",
+      "expected_decision": "FAIL",
+      "failure": "crop_change",
+      "type": "failure"
+    }
+  ]
+}

@@ -1,0 +1,66 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Virtual environment
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Python cache
+.pytest_cache/
+
+# Model checkpoints
+*.ckpt
+*.pth
+*.pt
+*.bin
+*.safetensors
+
+# AdaFace downloaded repository/checkpoints
+Adaface-master/AdaFace-master/pretrained/
+
+# Generated QA reports
+mock_data/expected/*.json
+
+# Gradio temporary files
+gradio_cached_examples/
+
+# Logs
+*.log
+
+# AdaFace repository files not required by this POC
+AdaFace-master/AdaFace-master/__pycache__/
+AdaFace-master/AdaFace-master/validation/
+AdaFace-master/AdaFace-master/validation_mixed/
+AdaFace-master/AdaFace-master/test_images/
+
+# Old project scaffold
+identity_visual_qa/
+
+# Unnecessary AdaFace repository content
+AdaFace-master/AdaFace-master/validation_hq/
+AdaFace-master/AdaFace-master/validation_lq/
+AdaFace-master/AdaFace-master/dataset/
+AdaFace-master/AdaFace-master/scripts/
+AdaFace-master/AdaFace-master/assets/
+AdaFace-master/AdaFace-master/README_TRAIN.md
+AdaFace-master/AdaFace-master/convert.py
+AdaFace-master/AdaFace-master/data.py
+AdaFace-master/AdaFace-master/evaluate_utils.py
+AdaFace-master/AdaFace-master/main.py
+AdaFace-master/AdaFace-master/train_val.py
+AdaFace-master/AdaFace-master/config.py
+
+# AdaFace notebooks and demo images
+**/*.ipynb
+AdaFace-master/AdaFace-master/face_alignment/test_images/
+AdaFace-master/AdaFace-master/face_alignment/mtcnn_pytorch/images/
