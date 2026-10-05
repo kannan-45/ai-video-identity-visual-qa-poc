@@ -207,9 +207,10 @@ venv\Scripts\activate
 ```bash
 python -m src.qa_engine
 ```
+
 ```markdown
-### 3. Run the comparison UI
 ```
+### 3. Run the comparison UI
 ```bash
 python -m src.comparison_ui
 ```
