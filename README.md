@@ -66,7 +66,7 @@ They are conceptually evaluated in parallel and their results are combined by th
                                   │
                            JSON QA Report
 
----
+```
 
 ---
 
