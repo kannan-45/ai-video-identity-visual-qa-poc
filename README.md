@@ -159,7 +159,7 @@ ai-video-identity-visual-qa-poc/
 │
 ├── requirements.txt
 └── README.md
-
+```
 ---
 
 ## Output
@@ -190,7 +190,7 @@ Example:
 }
 
 The full component-level evidence is retained in the report.
-
+```
 ---
 
 ## How to Run
@@ -235,7 +235,7 @@ Fixtures include:
 The fixture manifest records the expected result and failure type for each test case.
 
 This makes the QA pipeline reproducible and allows deliberate failures to be demonstrated during testing.
-
+```
 ---
 
 ## Demo
@@ -271,7 +271,7 @@ The module satisfies the following QA requirements:
 - Automated tests pass.
 - A visual comparison UI is available.
 - The module can run locally without depending on a live AI-video generation service.
-
+```
 ---
 
 ## Deliverables
