@@ -206,8 +206,6 @@ venv\Scripts\activate
 ```bash
 python -m src.qa_engine
 ```
-```markdown
-```
 ### 3. Run the comparison UI
 ```bash
 python -m src.comparison_ui
@@ -234,6 +232,7 @@ The fixture manifest records the expected result and failure type for each test 
 
 This makes the QA pipeline reproducible and allows deliberate failures to be demonstrated during testing.
 ```
+
 ```
 ## Demo
 
@@ -269,6 +268,7 @@ The module satisfies the following QA requirements:
 - A visual comparison UI is available.
 - The module can run locally without depending on a live AI-video generation service.
 ```
+
 ```
 ## Deliverables
 
