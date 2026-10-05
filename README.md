@@ -201,23 +201,23 @@ Windows:
 
 ```bash
 venv\Scripts\activate
-
+```
 ### 2. Run the QA engine
 
 ```bash
 python -m src.qa_engine
-
+```
 ```markdown
 ### 3. Run the comparison UI
-
+```
 ```bash
 python -m src.comparison_ui
-
+```
 ### 4. Run keyframe QA
 
 ```bash
 python -m src.keyframe_qa
-
+```
 ## Mock Fixture Workflow
 
 The module is designed to run locally with deterministic mock data before using real AI-generated videos.
@@ -246,14 +246,14 @@ A reference image compared against a visually consistent generated image produce
 
 ```text
 Decision: PASS
-
+```
 ### FAIL Example
 
 A deliberately modified image or video frame produces:
 
 ```text
 Decision: FAIL
-
+```
 ## Acceptance Criteria
 
 The module satisfies the following QA requirements:
