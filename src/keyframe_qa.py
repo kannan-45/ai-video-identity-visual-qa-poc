@@ -1,6 +1,7 @@
 import cv2
 import os
 import json
+import argparse
 
 
 class KeyframeQA:
@@ -8,7 +9,12 @@ class KeyframeQA:
     def __init__(self, qa_engine):
         self.qa_engine = qa_engine
 
-    def extract_keyframes(self, video_path, output_dir, num_frames=5):
+    def extract_keyframes(
+        self,
+        video_path,
+        output_dir,
+        num_frames=5
+    ):
         """
         Extract evenly spaced keyframes from a video.
         """
@@ -35,9 +41,14 @@ class KeyframeQA:
 
         if total_frames <= 0:
             capture.release()
-            raise ValueError("Video contains no frames.")
+            raise ValueError(
+                "Video contains no frames."
+            )
 
-        num_frames = min(num_frames, total_frames)
+        num_frames = min(
+            num_frames,
+            total_frames
+        )
 
         frame_indices = [
             int(i * (total_frames - 1) / (num_frames - 1))
@@ -48,7 +59,9 @@ class KeyframeQA:
 
         keyframes = []
 
-        for index, frame_number in enumerate(frame_indices):
+        for index, frame_number in enumerate(
+            frame_indices
+        ):
 
             capture.set(
                 cv2.CAP_PROP_POS_FRAMES,
@@ -115,7 +128,8 @@ class KeyframeQA:
             print(
                 f"\nAnalyzing frame "
                 f"{keyframe['frame_number']} "
-                f"at {keyframe['timestamp_seconds']}s..."
+                f"at "
+                f"{keyframe['timestamp_seconds']}s..."
             )
 
             qa_result = self.qa_engine.analyze(
@@ -124,15 +138,25 @@ class KeyframeQA:
             )
 
             results.append({
-                "frame_number": keyframe["frame_number"],
+                "frame_number": (
+                    keyframe["frame_number"]
+                ),
                 "timestamp_seconds": (
                     keyframe["timestamp_seconds"]
                 ),
                 "path": keyframe["path"],
-                "decision": qa_result["decision"],
-                "reason_codes": qa_result["reason_codes"],
-                "identity": qa_result["identity"],
-                "visual": qa_result["visual"]
+                "decision": (
+                    qa_result["decision"]
+                ),
+                "reason_codes": (
+                    qa_result["reason_codes"]
+                ),
+                "identity": (
+                    qa_result["identity"]
+                ),
+                "visual": (
+                    qa_result["visual"]
+                )
             })
 
         failed_frames = [
@@ -157,37 +181,61 @@ class KeyframeQA:
         }
 
 
-if __name__ == "__main__":
+def main():
 
-    from src.qa_engine import QAEngine
-
-    # Default test paths
-    reference_path = (
-        "mock_data/inputs/adaface/reference/"
-        "reference_adaface.jpeg"
+    parser = argparse.ArgumentParser(
+        description="Keyframe QA for AI-generated videos"
     )
 
-    video_path = (
-        "mock_data/inputs/test_video.mp4"
+    parser.add_argument(
+        "--reference",
+        default=(
+            "mock_data/inputs/adaface/reference/"
+            "reference_adaface.jpeg"
+        ),
+        help="Reference image path"
     )
 
-    output_dir = (
-        "mock_data/outputs/keyframes"
+    parser.add_argument(
+        "--video",
+        default="mock_data/inputs/test_video.mp4",
+        help="Video path"
     )
+
+    parser.add_argument(
+        "--output",
+        default="mock_data/outputs/keyframes",
+        help="Directory for extracted keyframes"
+    )
+
+    parser.add_argument(
+        "--num-frames",
+        type=int,
+        default=5,
+        help="Number of evenly spaced keyframes"
+    )
+
+    args = parser.parse_args()
 
     print("=" * 60)
     print("KEYFRAME QA TEST")
     print("=" * 60)
+
+    print(f"Reference : {args.reference}")
+    print(f"Video     : {args.video}")
+    print(f"Frames    : {args.num_frames}")
+
+    from src.qa_engine import QAEngine
 
     engine = QAEngine()
 
     keyframe_qa = KeyframeQA(engine)
 
     report = keyframe_qa.analyze_video(
-        reference_path=reference_path,
-        video_path=video_path,
-        output_dir=output_dir,
-        num_frames=5
+        reference_path=args.reference,
+        video_path=args.video,
+        output_dir=args.output,
+        num_frames=args.num_frames
     )
 
     print("\n" + "=" * 60)
@@ -195,15 +243,18 @@ if __name__ == "__main__":
     print("=" * 60)
 
     print(
-        f"Frames checked : {report['frames_checked']}"
+        f"Frames checked : "
+        f"{report['frames_checked']}"
     )
 
     print(
-        f"Failed frames  : {report['failed_frames']}"
+        f"Failed frames  : "
+        f"{report['failed_frames']}"
     )
 
     print(
-        f"Overall result : {report['overall_decision']}"
+        f"Overall result : "
+        f"{report['overall_decision']}"
     )
 
     print("\nFrame Results:")
@@ -217,12 +268,12 @@ if __name__ == "__main__":
         )
 
         if frame["reason_codes"]:
+
             print(
                 f"      Reasons: "
                 f"{', '.join(frame['reason_codes'])}"
             )
 
-    # Save report
     report_path = (
         "mock_data/outputs/keyframe_qa_report.json"
     )
@@ -237,6 +288,7 @@ if __name__ == "__main__":
         "w",
         encoding="utf-8"
     ) as f:
+
         json.dump(
             report,
             f,
@@ -244,5 +296,10 @@ if __name__ == "__main__":
         )
 
     print(
-        f"\nReport saved to: {report_path}"
+        f"\nReport saved to: "
+        f"{report_path}"
     )
+
+
+if __name__ == "__main__":
+    main()

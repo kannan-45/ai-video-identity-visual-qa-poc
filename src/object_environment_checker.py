@@ -21,8 +21,7 @@ class ObjectEnvironmentChecker:
         """
         Create a brightness-resistant structural descriptor.
 
-        Uses image gradients instead of raw color information,
-        making the comparison less sensitive to brightness changes.
+        Uses image gradients instead of raw color information.
         """
 
         gray = cv2.cvtColor(
@@ -30,7 +29,6 @@ class ObjectEnvironmentChecker:
             cv2.COLOR_BGR2GRAY
         )
 
-        # Normalize local contrast
         clahe = cv2.createCLAHE(
             clipLimit=2.0,
             tileGridSize=(8, 8)
@@ -38,7 +36,6 @@ class ObjectEnvironmentChecker:
 
         gray = clahe.apply(gray)
 
-        # Calculate horizontal and vertical gradients
         gx = cv2.Sobel(
             gray,
             cv2.CV_32F,
@@ -55,27 +52,16 @@ class ObjectEnvironmentChecker:
             ksize=3
         )
 
-        # Gradient magnitude
         magnitude = cv2.magnitude(
             gx,
             gy
         )
 
-        # Gradient orientation
         angle = cv2.phase(
             gx,
             gy,
             angleInDegrees=True
         )
-
-        # --------------------------------------------------
-        # Build orientation histogram manually
-        # --------------------------------------------------
-        #
-        # We do this manually because the installed OpenCV
-        # version does not support the "weights" argument
-        # in cv2.calcHist().
-        # --------------------------------------------------
 
         histogram = np.zeros(
             36,
@@ -93,19 +79,14 @@ class ObjectEnvironmentChecker:
         )
 
         for i in range(36):
-
             histogram[i] = np.sum(
                 magnitude[
                     bin_indices == i
                 ]
             )
 
-        histogram = histogram.reshape(
-            -1,
-            1
-        )
+        histogram = histogram.reshape(-1, 1)
 
-        # Normalize descriptor
         cv2.normalize(
             histogram,
             histogram
@@ -128,14 +109,177 @@ class ObjectEnvironmentChecker:
             cv2.HISTCMP_CORREL
         )
 
-        return round(
-            max(
-                0.0,
-                min(
-                    1.0,
-                    float(score)
+        return max(
+            0.0,
+            min(
+                1.0,
+                float(score)
+            )
+        )
+
+    def _spatial_structure_similarity(
+        self,
+        reference,
+        generated,
+        grid_size=3
+    ):
+        """
+        Compare structural descriptors spatially.
+
+        Instead of treating the whole object region as one
+        histogram, divide it into a grid and compare each cell.
+        This makes large local replacements easier to detect.
+        """
+
+        height, width = reference.shape[:2]
+
+        scores = []
+
+        for row in range(grid_size):
+
+            for col in range(grid_size):
+
+                y1 = int(
+                    row * height / grid_size
                 )
-            ),
+
+                y2 = int(
+                    (row + 1) * height / grid_size
+                )
+
+                x1 = int(
+                    col * width / grid_size
+                )
+
+                x2 = int(
+                    (col + 1) * width / grid_size
+                )
+
+                ref_cell = reference[
+                    y1:y2,
+                    x1:x2
+                ]
+
+                gen_cell = generated[
+                    y1:y2,
+                    x1:x2
+                ]
+
+                ref_descriptor = (
+                    self._structure_histogram(
+                        ref_cell
+                    )
+                )
+
+                gen_descriptor = (
+                    self._structure_histogram(
+                        gen_cell
+                    )
+                )
+
+                score = self._similarity(
+                    ref_descriptor,
+                    gen_descriptor
+                )
+
+                scores.append(score)
+
+        return float(np.mean(scores))
+
+    def _edge_difference(
+        self,
+        reference,
+        generated
+    ):
+        """
+        Measure local edge-map difference.
+
+        This complements the orientation histogram because
+        large replacements can remove or introduce strong edges.
+        """
+
+        ref_gray = cv2.cvtColor(
+            reference,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        gen_gray = cv2.cvtColor(
+            generated,
+            cv2.COLOR_BGR2GRAY
+        )
+
+        ref_edges = cv2.Canny(
+            ref_gray,
+            50,
+            150
+        )
+
+        gen_edges = cv2.Canny(
+            gen_gray,
+            50,
+            150
+        )
+
+        ref_edges = ref_edges.astype(
+            np.float32
+        ) / 255.0
+
+        gen_edges = gen_edges.astype(
+            np.float32
+        ) / 255.0
+
+        difference = np.mean(
+            np.abs(
+                ref_edges - gen_edges
+            )
+        )
+
+        similarity = 1.0 - float(
+            difference
+        )
+
+        return max(
+            0.0,
+            min(
+                1.0,
+                similarity
+            )
+        )
+
+    def _object_score(
+        self,
+        reference,
+        generated
+    ):
+        """
+        Combine spatial structural similarity and
+        edge similarity for the object region.
+        """
+
+        spatial_score = (
+            self._spatial_structure_similarity(
+                reference,
+                generated,
+                grid_size=3
+            )
+        )
+
+        edge_score = (
+            self._edge_difference(
+                reference,
+                generated
+            )
+        )
+
+        # Spatial structure gets more weight because
+        # object layout is the primary signal.
+        score = (
+            0.70 * spatial_score
+            + 0.30 * edge_score
+        )
+
+        return round(
+            float(score),
             4
         )
 
@@ -149,10 +293,6 @@ class ObjectEnvironmentChecker:
         between reference and generated images.
         """
 
-        # --------------------------------------------------
-        # Load images
-        # --------------------------------------------------
-
         reference = self._load(
             reference_path
         )
@@ -161,7 +301,6 @@ class ObjectEnvironmentChecker:
             generated_path
         )
 
-        # Match generated image size to reference
         generated = cv2.resize(
             generated,
             (
@@ -174,10 +313,6 @@ class ObjectEnvironmentChecker:
 
         # --------------------------------------------------
         # Object region
-        # --------------------------------------------------
-        #
-        # Approximate central object region.
-        # This is a prototype region-based checker.
         # --------------------------------------------------
 
         y1 = int(height * 0.20)
@@ -214,28 +349,16 @@ class ObjectEnvironmentChecker:
         ] = 0
 
         # --------------------------------------------------
-        # Object structural similarity
+        # Object comparison
         # --------------------------------------------------
 
-        object_reference_descriptor = (
-            self._structure_histogram(
-                ref_object
-            )
-        )
-
-        object_generated_descriptor = (
-            self._structure_histogram(
-                gen_object
-            )
-        )
-
-        object_score = self._similarity(
-            object_reference_descriptor,
-            object_generated_descriptor
+        object_score = self._object_score(
+            ref_object,
+            gen_object
         )
 
         # --------------------------------------------------
-        # Environment structural similarity
+        # Environment comparison
         # --------------------------------------------------
 
         environment_reference_descriptor = (
@@ -255,6 +378,11 @@ class ObjectEnvironmentChecker:
             environment_generated_descriptor
         )
 
+        environment_score = round(
+            environment_score,
+            4
+        )
+
         # --------------------------------------------------
         # Classification
         # --------------------------------------------------
@@ -268,10 +396,6 @@ class ObjectEnvironmentChecker:
             environment_label = "ENVIRONMENT_CONSISTENT"
         else:
             environment_label = "ENVIRONMENT_DRIFT"
-
-        # --------------------------------------------------
-        # Final result
-        # --------------------------------------------------
 
         return {
             "object": {

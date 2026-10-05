@@ -1,118 +1,165 @@
 import gradio as gr
+import json
+from pathlib import Path
 
 from src.qa_engine import QAEngine
 
 
-engine = None
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
 
-def run_qa(reference, generated):
-    global engine
+engine = QAEngine()
 
-    if reference is None or generated is None:
+
+def run_qa(reference_image, generated_image):
+    """
+    Run the complete identity + visual QA pipeline
+    and return a structured report for the UI.
+    """
+
+    if reference_image is None:
         return (
-            "REVIEW",
-            "Please provide both reference and generated images.",
-            "{}"
+            "ERROR",
+            {},
+            "Please provide a reference image."
         )
 
-    if engine is None:
-        engine = QAEngine()
-
-    reference_path = reference
-    generated_path = generated
-
-    result = engine.analyze(
-        reference_path,
-        generated_path
-    )
-
-    decision = result["decision"]
-
-    reason_codes = result["reason_codes"]
-
-    reason_text = (
-        "\n".join(reason_codes)
-        if reason_codes
-        else "No failure reason codes"
-    )
-
-    import json
-
-    report = json.dumps(
-        result,
-        indent=2
-    )
-
-    return (
-        decision,
-        reason_text,
-        report
-    )
-
-
-with gr.Blocks(title="Identity & Visual Consistency QA") as demo:
-
-    gr.Markdown(
-        """
-        # Identity & Visual Consistency QA
-
-        Compare a reference image with a generated image.
-
-        The system evaluates:
-
-        - AdaFace identity similarity
-        - SSIM structural similarity
-        - LPIPS perceptual similarity
-        - CLIP semantic similarity
-        - Reason codes
-        """
-    )
-
-    with gr.Row():
-
-        reference_image = gr.Image(
-            type="filepath",
-            label="Reference Image"
+    if generated_image is None:
+        return (
+            "ERROR",
+            {},
+            "Please provide a generated image."
         )
 
-        generated_image = gr.Image(
-            type="filepath",
-            label="Generated Image"
-        )
-
-    analyze_button = gr.Button(
-        "Run QA"
-    )
-
-    decision = gr.Textbox(
-        label="Decision"
-    )
-
-    reasons = gr.Textbox(
-        label="Reason Codes",
-        lines=5
-    )
-
-    report = gr.Code(
-        label="QA Report JSON",
-        language="json",
-        lines=20
-    )
-
-    analyze_button.click(
-        fn=run_qa,
-        inputs=[
+    try:
+        result = engine.analyze(
             reference_image,
             generated_image
-        ],
-        outputs=[
-            decision,
-            reasons,
-            report
-        ]
-    )
+        )
+
+        decision = result["decision"]
+
+        if decision == "PASS":
+            status = "PASS"
+        else:
+            status = "FAIL"
+
+        return (
+            status,
+            result,
+            json.dumps(
+                result,
+                indent=2
+            )
+        )
+
+    except Exception as error:
+
+        return (
+            "ERROR",
+            {},
+            f"QA execution failed:\n{error}"
+        )
+
+
+def build_ui():
+
+    with gr.Blocks(
+        title="Identity & Visual Consistency QA"
+    ) as demo:
+
+        gr.Markdown(
+            """
+# Identity & Visual Consistency QA
+
+Compare a reference image against an AI-generated image
+using multiple independent QA signals.
+
+### QA Components
+
+- **AdaFace** — primary face identity verification
+- **PixelFacePrototype** — prototype identity evidence
+- **DINOv3** — visual representation similarity
+- **SSIM** — structural similarity
+- **LPIPS** — perceptual similarity
+- **CLIP** — semantic similarity
+- **Object consistency** — object-region consistency
+- **Environment consistency** — background/environment consistency
+- **Reason codes** — explains why a sample passed or failed
+"""
+        )
+
+        with gr.Row():
+
+            with gr.Column():
+
+                reference_input = gr.Image(
+                    label="Reference Image",
+                    type="filepath"
+                )
+
+                generated_input = gr.Image(
+                    label="Generated Image",
+                    type="filepath"
+                )
+
+                run_button = gr.Button(
+                    "Run QA",
+                    variant="primary"
+                )
+
+            with gr.Column():
+
+                decision_output = gr.Textbox(
+                    label="QA Decision",
+                    interactive=False
+                )
+
+                report_output = gr.JSON(
+                    label="QA Report"
+                )
+
+        json_output = gr.Code(
+            label="Raw QA Report JSON",
+            language="json",
+            interactive=False
+        )
+
+        gr.Markdown(
+            """
+## Interpretation
+
+**PASS** means no configured QA failure reason was detected.
+
+**FAIL** means at least one QA signal detected a configured
+identity or visual consistency problem.
+
+The system intentionally retains component-level evidence
+instead of reducing the result to a single opaque score.
+"""
+        )
+
+        run_button.click(
+            fn=run_qa,
+            inputs=[
+                reference_input,
+                generated_input
+            ],
+            outputs=[
+                decision_output,
+                report_output,
+                json_output
+            ]
+        )
+
+    return demo
 
 
 if __name__ == "__main__":
-    demo.launch(share=True)
+
+    demo = build_ui()
+
+    demo.launch(
+        server_name="127.0.0.1",
+        server_port=7860
+    )

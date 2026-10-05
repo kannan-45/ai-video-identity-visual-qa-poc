@@ -1,0 +1,19 @@
+{
+  "dataset": "COCO 2017 Validation Images",
+  "source": "Microsoft COCO",
+  "purpose": "Object and environment consistency QA development fixtures",
+  "split": "val2017",
+  "image_count": 5,
+  "images": [
+    "000000000139.jpg",
+    "000000000285.jpg",
+    "000000000632.jpg",
+    "000000000724.jpg",
+    "000000000776.jpg"
+  ],
+  "source_url": "https://cocodataset.org/",
+  "image_source_url": "http://images.cocodataset.org/val2017/",
+  "annotation_license": "CC BY 4.0",
+  "image_license_note": "COCO images originate from Flickr and individual image licenses may vary. Verify the applicable license before redistribution.",
+  "usage": "Development and benchmarking only"
+}

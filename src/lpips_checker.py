@@ -4,41 +4,73 @@ from PIL import Image
 from torchvision import transforms
 
 
-class LPIPSChecker:
+# Load LPIPS model once
+_lpips_model = lpips.LPIPS(net="alex")
+_lpips_model.eval()
 
-    def __init__(self, network="alex"):
-        self.model = lpips.LPIPS(net=network)
-        self.model.eval()
 
-        self.transform = transforms.Compose([
-            transforms.Resize((256, 256)),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.5, 0.5, 0.5],
-                std=[0.5, 0.5, 0.5]
-            )
-        ])
+def _load_image(image_path):
+    """
+    Load image and convert it into the tensor format
+    expected by LPIPS.
+    """
+    image = Image.open(image_path).convert("RGB")
 
-    def _load_image(self, path):
-        image = Image.open(path).convert("RGB")
-        return self.transform(image).unsqueeze(0)
+    transform = transforms.Compose([
+        transforms.Resize((256, 256)),
+        transforms.ToTensor(),
+        transforms.Normalize(
+            mean=[0.5, 0.5, 0.5],
+            std=[0.5, 0.5, 0.5]
+        )
+    ])
 
-    def calculate(self, reference_path, generated_path):
-        reference = self._load_image(reference_path)
-        generated = self._load_image(generated_path)
+    return transform(image).unsqueeze(0)
 
-        with torch.no_grad():
-            score = self.model(reference, generated)
 
-        return round(float(score.item()), 4)
+def calculate_lpips(reference_path, generated_path):
+    """
+    Calculate LPIPS perceptual distance.
+
+    Lower score = more visually similar.
+    Higher score = greater perceptual difference.
+    """
+
+    reference = _load_image(reference_path)
+    generated = _load_image(generated_path)
+
+    with torch.no_grad():
+        score = _lpips_model(reference, generated)
+
+    return round(float(score.item()), 4)
 
 
 if __name__ == "__main__":
-    checker = LPIPSChecker()
+    from pathlib import Path
 
-    score = checker.calculate(
-        "mock_data/inputs/reference/reference_001.png",
-        "mock_data/inputs/generated/generated_001_same_identity.png"
+    PROJECT_ROOT = Path(__file__).resolve().parent.parent
+
+    reference = (
+        PROJECT_ROOT
+        / "mock_data"
+        / "inputs"
+        / "adaface"
+        / "reference"
+        / "reference_adaface.jpeg"
+    )
+
+    generated = (
+        PROJECT_ROOT
+        / "mock_data"
+        / "inputs"
+        / "adaface"
+        / "generated"
+        / "generated_visual_drift.jpeg"
+    )
+
+    score = calculate_lpips(
+        str(reference),
+        str(generated)
     )
 
     print("LPIPS score:", score)

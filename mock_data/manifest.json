@@ -1,6 +1,6 @@
 {
   "module": "identity_visual_qa",
-  "version": "0.2",
+  "version": "0.3",
   "fixtures": [
     {
       "id": "identity_positive_same_photo",
@@ -10,6 +10,19 @@
       "expected_decision": "PASS",
       "type": "positive"
     },
+    {
+      "id": "coco_object_drift_001",
+      "reference": "inputs/coco/images/000000000139.jpg",
+      "generated": "inputs/coco/failures/000000000139_object_change.jpg",
+      "expected_identity": "REFERENCE_FACE_MISSING",
+      "expected_decision": "FAIL",
+      "failure": "object_replacement",
+      "expected_reason_codes": [
+      "VISUAL_OBJECT_DRIFT"
+    ],
+      "type": "coco_object_environment_failure"
+    }
+
     {
       "id": "identity_positive_different_photo",
       "reference": "inputs/adaface/reference/reference_adaface.jpeg",
@@ -62,10 +75,44 @@
       "expected_decision": "FAIL",
       "failure": "visual_drift",
       "expected_reason_codes": [
-        "VISUAL_STRUCTURAL_CHANGE",
-        "VISUAL_DRIFT_FALLBACK"
+        "VISUAL_STRUCTURAL_CHANGE"
       ],
       "type": "failure"
+    },
+    {
+      "id": "coco_object_environment_001",
+      "reference": "inputs/coco/images/000000000139.jpg",
+      "generated": "inputs/coco/images/000000000139.jpg",
+      "expected_decision": "PASS",
+      "type": "coco_object_environment_positive"
+    },
+    {
+      "id": "coco_object_environment_002",
+      "reference": "inputs/coco/images/000000000285.jpg",
+      "generated": "inputs/coco/images/000000000285.jpg",
+      "expected_decision": "PASS",
+      "type": "coco_object_environment_positive"
+    },
+    {
+      "id": "coco_object_environment_003",
+      "reference": "inputs/coco/images/000000000632.jpg",
+      "generated": "inputs/coco/images/000000000632.jpg",
+      "expected_decision": "PASS",
+      "type": "coco_object_environment_positive"
+    },
+    {
+      "id": "coco_object_environment_004",
+      "reference": "inputs/coco/images/000000000724.jpg",
+      "generated": "inputs/coco/images/000000000724.jpg",
+      "expected_decision": "PASS",
+      "type": "coco_object_environment_positive"
+    },
+    {
+      "id": "coco_object_environment_005",
+      "reference": "inputs/coco/images/000000000776.jpg",
+      "generated": "inputs/coco/images/000000000776.jpg",
+      "expected_decision": "PASS",
+      "type": "coco_object_environment_positive"
     }
   ]
 }

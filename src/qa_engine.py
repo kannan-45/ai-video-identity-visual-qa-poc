@@ -1,13 +1,12 @@
-import json
-import os
+from pathlib import Path
 
-from src.object_environment_checker import ObjectEnvironmentChecker
 from src.face_identity_checker import FaceIdentityChecker
 from src.adaface_checker import AdaFaceChecker
 from src.ssim_checker import calculate_ssim
-from src.lpips_checker import LPIPSChecker
-from src.clip_checker import CLIPChecker
+from src.lpips_checker import calculate_lpips
+from src.clip_checker import calculate_clip_similarity
 from src.dinov3_checker import DINOv3Checker
+from src.object_environment_checker import ObjectEnvironmentChecker
 
 
 class QAEngine:
@@ -15,352 +14,288 @@ class QAEngine:
     def __init__(self):
         self.face_checker = FaceIdentityChecker()
         self.adaface_checker = AdaFaceChecker()
-        self.lpips_checker = LPIPSChecker()
-        self.clip_checker = CLIPChecker()
         self.dinov3_checker = DINOv3Checker()
         self.object_environment_checker = ObjectEnvironmentChecker()
 
-    def analyze(
-        self,
-        reference_path,
-        generated_path,
-        output_path=None
-    ):
+    def analyze(self, reference_path, generated_path):
 
-        # --------------------------------------------------
-        # 1. Face identity - prototype evidence
-        # --------------------------------------------------
+        reason_codes = []
 
-        identity_result = self.face_checker.compare(
-            reference_path,
-            generated_path
-        )
+        # =====================================================
+        # Identity
+        # =====================================================
 
-        # --------------------------------------------------
-        # 2. AdaFace identity
-        # --------------------------------------------------
+        reference_face = self.face_checker.detect_face(reference_path)
+        generated_face = self.face_checker.detect_face(generated_path)
 
+        if reference_face is None:
+            reason_codes.append("ID_REFERENCE_FACE_MISSING")
+
+        if generated_face is None:
+            reason_codes.append("ID_FACE_MISSING")
+
+        # AdaFace = primary identity model
         adaface_result = self.adaface_checker.compare(
             reference_path,
-            generated_path
+            generated_path,
         )
 
-        # --------------------------------------------------
-        # 3. SSIM - structural similarity
-        # --------------------------------------------------
+        if adaface_result["label"] == "DIFFERENT_IDENTITY":
+            reason_codes.append("ID_FACE_MISMATCH")
+
+        # Prototype model retained as supporting evidence
+        prototype_result = self.face_checker.compare(
+            reference_path,
+            generated_path,
+        )
+
+        if (
+            prototype_result.get("label") == "DIFFERENT_IDENTITY"
+            and adaface_result.get("label") != "SAME_IDENTITY"
+        ):
+            reason_codes.append("ID_FACE_MISMATCH")
+
+        # =====================================================
+        # Visual metrics
+        # =====================================================
 
         ssim_score = calculate_ssim(
             reference_path,
-            generated_path
+            generated_path,
         )
 
-        # --------------------------------------------------
-        # 4. LPIPS - perceptual similarity
-        # --------------------------------------------------
-
-        lpips_score = self.lpips_checker.calculate(
+        lpips_score = calculate_lpips(
             reference_path,
-            generated_path
+            generated_path,
         )
 
-        # --------------------------------------------------
-        # 5. CLIP - semantic similarity
-        # --------------------------------------------------
-
-        clip_score = self.clip_checker.calculate(
+        clip_score = calculate_clip_similarity(
             reference_path,
-            generated_path
+            generated_path,
         )
 
-        # --------------------------------------------------
-        # 6. DINOv3 - visual feature similarity
-        # --------------------------------------------------
+        # =====================================================
+        # SSIM
+        # =====================================================
+
+        if ssim_score < 0.90:
+            reason_codes.append("VISUAL_STRUCTURAL_CHANGE")
+
+        # =====================================================
+        # LPIPS
+        # =====================================================
+
+        if lpips_score > 0.30:
+            reason_codes.append("VISUAL_PERCEPTUAL_CHANGE")
+
+        # =====================================================
+        # CLIP
+        # =====================================================
+
+        if clip_score < 0.85:
+            reason_codes.append("VISUAL_LOW_SIMILARITY")
+
+        # =====================================================
+        # DINOv3
+        # =====================================================
 
         dinov3_result = self.dinov3_checker.compare(
             reference_path,
-            generated_path
+            generated_path,
         )
 
-        # --------------------------------------------------
-        # 7. Object and environment consistency
-        # --------------------------------------------------
+        if (
+            dinov3_result.get("available")
+            and dinov3_result.get("label") == "VISUAL_DRIFT"
+        ):
+            reason_codes.append("VISUAL_DINOV3_DRIFT")
+
+        # =====================================================
+        # Object + environment consistency
+        # =====================================================
 
         object_environment_result = (
             self.object_environment_checker.compare(
                 reference_path,
-                generated_path
+                generated_path,
             )
         )
 
-        # --------------------------------------------------
-        # Reason codes
-        # --------------------------------------------------
+        object_result = object_environment_result.get(
+            "object",
+            {},
+        )
 
-        reason_codes = []
+        environment_result = object_environment_result.get(
+            "environment",
+            {},
+        )
 
-        # --------------------------------------------------
-        # Identity checks
-        # --------------------------------------------------
+        if object_result.get("label") == "OBJECT_DRIFT":
+            reason_codes.append("VISUAL_OBJECT_DRIFT")
 
-        if adaface_result["label"] == "REFERENCE_FACE_MISSING":
+        if environment_result.get("label") == "ENVIRONMENT_DRIFT":
+            reason_codes.append("VISUAL_ENVIRONMENT_DRIFT")
 
-            reason_codes.append(
-                "ID_REFERENCE_FACE_MISSING"
-            )
-
-        elif adaface_result["label"] == "GENERATED_FACE_MISSING":
-
-            reason_codes.append(
-                "ID_FACE_MISSING"
-            )
-
-        elif adaface_result["label"] == "DIFFERENT_IDENTITY":
-
-            reason_codes.append(
-                "ID_FACE_MISMATCH"
-            )
-
-        # --------------------------------------------------
-        # Structural similarity
-        # --------------------------------------------------
-
-        if ssim_score < 0.90:
-
-            reason_codes.append(
-                "VISUAL_STRUCTURAL_CHANGE"
-            )
-
-        # --------------------------------------------------
-        # Perceptual similarity
-        # --------------------------------------------------
-
-        if lpips_score > 0.30:
-
-            reason_codes.append(
-                "VISUAL_PERCEPTUAL_CHANGE"
-            )
-
-        # --------------------------------------------------
-        # Semantic similarity
-        # --------------------------------------------------
-
-        if clip_score < 0.85:
-
-            reason_codes.append(
-                "VISUAL_LOW_SIMILARITY"
-            )
-
-        # --------------------------------------------------
-        # DINOv3
+        # =====================================================
+        # Multi-signal fallback
         #
-        # If DINOv3 is available, it is the primary
-        # visual-drift detector.
-        #
-        # If DINOv3 is unavailable, the system falls back
-        # to the structural/perceptual evidence above.
-        # --------------------------------------------------
+        # Only active when DINOv3 is unavailable.
+        # =====================================================
 
-        if dinov3_result["available"]:
+        dinov3_available = bool(
+            dinov3_result.get("available")
+        )
 
-            if dinov3_result["label"] == "VISUAL_DRIFT":
+        fallback_triggered = False
+
+        if not dinov3_available:
+
+            if (
+                ssim_score < 0.75
+                and lpips_score > 0.15
+                and clip_score < 0.95
+            ):
+                fallback_triggered = True
 
                 reason_codes.append(
-                    "VISUAL_DINOV3_DRIFT"
+                    "VISUAL_DRIFT_FALLBACK"
                 )
 
-        # --------------------------------------------------
-        # Object consistency
-        # --------------------------------------------------
+        fallback_reason = (
+            "DINOv3 available; fallback not required."
+            if dinov3_available
+            else
+            "DINOv3 unavailable; fallback uses "
+            "SSIM + LPIPS + CLIP to detect strong "
+            "multi-signal visual change."
+        )
 
-        if (
-            object_environment_result["object"]["label"]
-            == "OBJECT_DRIFT"
-        ):
-
-            reason_codes.append(
-                "VISUAL_OBJECT_DRIFT"
-            )
-
-        # --------------------------------------------------
-        # Environment consistency
-        # --------------------------------------------------
-
-        if (
-            object_environment_result["environment"]["label"]
-            == "ENVIRONMENT_DRIFT"
-        ):
-
-            reason_codes.append(
-                "VISUAL_ENVIRONMENT_DRIFT"
-            )
-
-        # --------------------------------------------------
-        # Explicit visual-drift fallback
-        #
-        # DINOv3 may be unavailable because its official
-        # checkpoint requires gated access.
-        #
-        # We therefore classify deliberate strong visual
-        # changes using multiple independent signals.
-        #
-        # This does NOT pretend to be DINOv3.
-        # It is explicitly labelled as fallback evidence.
-        # --------------------------------------------------
-
-        visual_drift_fallback = False
-
-        if (
-            ssim_score < 0.75
-            and lpips_score > 0.15
-            and clip_score < 0.95
-        ):
-
-            visual_drift_fallback = True
-
-            reason_codes.append(
-                "VISUAL_DRIFT_FALLBACK"
-            )
-
-        # --------------------------------------------------
+        # =====================================================
         # Final decision
-        # --------------------------------------------------
+        # =====================================================
 
-        if reason_codes:
+        decision = (
+            "FAIL"
+            if reason_codes
+            else
+            "PASS"
+        )
 
-            decision = "FAIL"
+        # Remove duplicate reason codes while preserving order
+        reason_codes = list(dict.fromkeys(reason_codes))
 
-        else:
+        # =====================================================
+        # Final report
+        # =====================================================
 
-            decision = "PASS"
-
-        # --------------------------------------------------
-        # QA report
-        # --------------------------------------------------
-
-        result = {
-
+        report = {
             "identity": {
-
                 "primary": {
-
                     "model": "AdaFace",
-
-                    "score": adaface_result["score"],
-
-                    "label": adaface_result["label"]
+                    "score": adaface_result.get("score"),
+                    "label": adaface_result.get("label"),
                 },
-
                 "prototype_evidence": {
-
                     "model": "PixelFacePrototype",
-
-                    "score": identity_result["score"],
-
-                    "label": identity_result["label"]
-                }
+                    "score": prototype_result.get("score"),
+                    "label": prototype_result.get("label"),
+                },
             },
 
             "visual": {
-
                 "ssim": ssim_score,
-
                 "lpips": lpips_score,
-
                 "clip": clip_score,
 
                 "dinov3": dinov3_result,
 
-                "object_environment":
-                    object_environment_result,
+                "object_environment": (
+                    object_environment_result
+                ),
 
                 "visual_drift_fallback": {
-
-                    "enabled": not dinov3_result["available"],
-
-                    "triggered": visual_drift_fallback,
-
-                    "method":
-                        "SSIM + LPIPS + CLIP",
-
-                    "reason":
-                        (
-                            "DINOv3 checkpoint unavailable; "
-                            "fallback detects strong multi-signal "
-                            "visual change."
-                        )
-                }
+                    "enabled": not dinov3_available,
+                    "triggered": fallback_triggered,
+                    "method": "SSIM + LPIPS + CLIP",
+                    "reason": fallback_reason,
+                },
             },
 
             "decision": decision,
 
-            "reason_codes": reason_codes
+            "reason_codes": reason_codes,
         }
 
-        # --------------------------------------------------
-        # Save report
-        # --------------------------------------------------
+        return report
 
-        if output_path:
 
-            output_directory = os.path.dirname(
-                output_path
-            )
-
-            if output_directory:
-
-                os.makedirs(
-                    output_directory,
-                    exist_ok=True
-                )
-
-            with open(
-                output_path,
-                "w"
-            ) as f:
-
-                json.dump(
-                    result,
-                    f,
-                    indent=2
-                )
-
-        return result
-
+# ============================================================
+# Standalone test
+# ============================================================
 
 if __name__ == "__main__":
 
+    project_root = Path(__file__).resolve().parent.parent
+
+    reference = (
+        project_root
+        / "mock_data"
+        / "inputs"
+        / "adaface"
+        / "reference"
+        / "reference_adaface.jpeg"
+    )
+
+    generated = (
+        project_root
+        / "mock_data"
+        / "inputs"
+        / "adaface"
+        / "generated"
+        / "generated_visual_drift.jpeg"
+    )
+
     engine = QAEngine()
 
-    reference_path = (
-        "mock_data/inputs/adaface/reference/"
-        "reference_adaface.jpeg"
-    )
-
-    generated_path = (
-        "mock_data/inputs/adaface/generated/"
-        "generated_visual_drift.jpeg"
-    )
-
-    output_path = (
-        "mock_data/expected/"
-        "visual_drift_qa_report.json"
-    )
-
     result = engine.analyze(
-        reference_path,
-        generated_path,
-        output_path
+        str(reference),
+        str(generated),
     )
+
+    import json
 
     print(
         json.dumps(
             result,
-            indent=2
+            indent=2,
         )
     )
 
-    print()
+    output_path = (
+        project_root
+        / "mock_data"
+        / "expected"
+        / "visual_drift_qa_report.json"
+    )
+
+    output_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    with open(
+        output_path,
+        "w",
+        encoding="utf-8",
+    ) as f:
+
+        json.dump(
+            result,
+            f,
+            indent=2,
+        )
+
     print(
-        "QA report saved to:",
-        output_path
+        f"\nQA report saved to: {output_path}"
     )

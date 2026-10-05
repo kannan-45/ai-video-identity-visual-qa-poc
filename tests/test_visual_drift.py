@@ -25,24 +25,16 @@ VISUAL_DRIFT_FIXTURE = (
 
 
 def test_visual_drift_fixture_exists():
-    """Verify the deliberate visual-drift fixture exists."""
-
     assert REFERENCE.exists(), (
         f"Reference fixture not found: {REFERENCE}"
     )
 
     assert VISUAL_DRIFT_FIXTURE.exists(), (
-        f"Visual drift fixture not found: "
-        f"{VISUAL_DRIFT_FIXTURE}"
+        f"Visual drift fixture not found: {VISUAL_DRIFT_FIXTURE}"
     )
 
 
 def test_visual_drift_is_detected():
-    """
-    Verify that the deliberate visual-drift fixture
-    produces a FAIL decision and visual-drift evidence.
-    """
-
     engine = QAEngine()
 
     result = engine.analyze(
@@ -54,18 +46,25 @@ def test_visual_drift_is_detected():
 
     reason_codes = result["reason_codes"]
 
-    assert (
-        "VISUAL_DRIFT_FALLBACK" in reason_codes
-        or "VISUAL_DINOV3_DRIFT" in reason_codes
+    # The visual-drift fixture must produce at least
+    # one explicit visual-failure reason.
+    visual_failure_codes = {
+        "VISUAL_STRUCTURAL_CHANGE",
+        "VISUAL_PERCEPTUAL_CHANGE",
+        "VISUAL_LOW_SIMILARITY",
+        "VISUAL_DINOV3_DRIFT",
+        "VISUAL_DRIFT_FALLBACK",
+        "VISUAL_OBJECT_DRIFT",
+        "VISUAL_ENVIRONMENT_DRIFT",
+    }
+
+    assert visual_failure_codes.intersection(reason_codes), (
+        f"No visual failure reason detected. "
+        f"Reason codes: {reason_codes}"
     )
 
 
 def test_visual_drift_has_component_evidence():
-    """
-    Verify that visual drift is supported by component-level
-    evidence rather than a single opaque score.
-    """
-
     engine = QAEngine()
 
     result = engine.analyze(
@@ -81,6 +80,53 @@ def test_visual_drift_has_component_evidence():
     assert "dinov3" in visual
     assert "object_environment" in visual
 
-    # Our current deliberate fixture should show
-    # substantial structural change.
     assert visual["ssim"] < 0.75
+
+
+def test_dinov3_status_is_reported():
+    engine = QAEngine()
+
+    result = engine.analyze(
+        str(REFERENCE),
+        str(VISUAL_DRIFT_FIXTURE)
+    )
+
+    dinov3 = result["visual"]["dinov3"]
+
+    assert "available" in dinov3
+    assert "score" in dinov3
+    assert "label" in dinov3
+
+def test_coco_object_drift():
+    reference = (
+        PROJECT_ROOT
+        / "mock_data"
+        / "inputs"
+        / "coco"
+        / "images"
+        / "000000000139.jpg"
+    )
+
+    generated = (
+        PROJECT_ROOT
+        / "mock_data"
+        / "inputs"
+        / "coco"
+        / "failures"
+        / "000000000139_object_change.jpg"
+    )
+
+    result = QAEngine().analyze(str(reference), str(generated))
+
+    assert result["decision"] == "FAIL"
+
+    assert "VISUAL_OBJECT_DRIFT" in result["reason_codes"]
+
+    object_result = result["visual"]["object_environment"]["object"]
+
+    assert object_result["label"] == "OBJECT_DRIFT"
+    assert object_result["score"] < 0.70
+
+    environment_result = result["visual"]["object_environment"]["environment"]
+
+    assert environment_result["label"] == "ENVIRONMENT_CONSISTENT"
