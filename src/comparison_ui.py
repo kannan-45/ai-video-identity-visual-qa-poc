@@ -115,4 +115,4 @@ with gr.Blocks(title="Identity & Visual Consistency QA") as demo:
 
 
 if __name__ == "__main__":
-    demo.launch()
+    demo.launch(share=True)

@@ -1,6 +1,6 @@
 {
   "module": "identity_visual_qa",
-  "version": "0.1",
+  "version": "0.2",
   "fixtures": [
     {
       "id": "identity_positive_same_photo",
@@ -52,6 +52,19 @@
       "expected_identity": "SAME_IDENTITY",
       "expected_decision": "FAIL",
       "failure": "crop_change",
+      "type": "failure"
+    },
+    {
+      "id": "visual_drift_deliberate",
+      "reference": "inputs/adaface/reference/reference_adaface.jpeg",
+      "generated": "inputs/adaface/generated/generated_visual_drift.jpeg",
+      "expected_identity": "SAME_IDENTITY",
+      "expected_decision": "FAIL",
+      "failure": "visual_drift",
+      "expected_reason_codes": [
+        "VISUAL_STRUCTURAL_CHANGE",
+        "VISUAL_DRIFT_FALLBACK"
+      ],
       "type": "failure"
     }
   ]

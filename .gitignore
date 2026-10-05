@@ -64,3 +64,4 @@ AdaFace-master/AdaFace-master/config.py
 **/*.ipynb
 AdaFace-master/AdaFace-master/face_alignment/test_images/
 AdaFace-master/AdaFace-master/face_alignment/mtcnn_pytorch/images/
+.gradio/
