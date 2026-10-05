@@ -203,11 +203,9 @@ Windows:
 venv\Scripts\activate
 ```
 ### 2. Run the QA engine
-
 ```bash
 python -m src.qa_engine
 ```
-
 ```markdown
 ```
 ### 3. Run the comparison UI
@@ -215,7 +213,6 @@ python -m src.qa_engine
 python -m src.comparison_ui
 ```
 ### 4. Run keyframe QA
-
 ```bash
 python -m src.keyframe_qa
 ```
