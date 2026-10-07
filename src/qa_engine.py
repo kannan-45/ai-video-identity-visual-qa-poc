@@ -1,4 +1,5 @@
 from pathlib import Path
+import hashlib
 import json
 
 import cv2
@@ -15,18 +16,21 @@ from .object_environment_checker import ObjectEnvironmentChecker
 
 class QAEngine:
     """
-    Identity + visual consistency QA engine.
+    Member 7 - Identity & Visual Consistency QA Engine.
 
     Day 1:
-        Reference image -> generated image -> component scores -> QA report
+        Reference image vs generated image.
 
     Day 2:
-        Reference image + MP4 clip
-        -> deterministic frame sampling
-        -> frame-level QA
-        -> clip-level aggregation
-        -> shared QAResult
+        Reference image vs sampled video frames.
+        ClipMetadata consumption and verification.
+        Deterministic frame sampling.
+        QAResult generation.
     """
+
+    # ================================================================
+    # Constructor
+    # ================================================================
 
     def __init__(self):
         self.face_checker = FaceIdentityChecker()
@@ -35,505 +39,959 @@ class QAEngine:
         self.object_environment_checker = ObjectEnvironmentChecker()
 
     # ================================================================
-    # DAY 1 - IMAGE QA
+    # Utility
     # ================================================================
 
-    def analyze(self, reference_path, generated_path):
+    @staticmethod
+    def _add_reason(reason_codes, reason):
+        if reason not in reason_codes:
+            reason_codes.append(reason)
+
+    # ================================================================
+    # Identity checks
+    # ================================================================
+
+    def _run_identity_checks(
+        self,
+        reference_path,
+        generated_path,
+    ):
         """
-        Analyze one reference image against one generated image.
+        Run primary AdaFace identity checking and the
+        original Day 1 prototype face checker.
         """
 
-        reference_path = Path(reference_path)
-        generated_path = Path(generated_path)
-
-        reason_codes = []
-
-        # ------------------------------------------------------------
-        # Identity - prototype checker
-        # ------------------------------------------------------------
-
-        identity_report = self.face_checker.compare(
-            str(reference_path),
-            str(generated_path)
+        adaface_result = self.adaface_checker.compare(
+            reference_path,
+            generated_path,
         )
 
-        identity_label = identity_report.get("label")
-        identity_score = identity_report.get("score")
-
-        if identity_label == "REFERENCE_FACE_MISSING":
-            reason_codes.append(
-                "ID_REFERENCE_FACE_MISSING"
-            )
-
-        elif identity_label == "GENERATED_FACE_MISSING":
-            reason_codes.append(
-                "ID_FACE_MISSING"
-            )
-
-        elif identity_label == "DIFFERENT_IDENTITY":
-            reason_codes.append(
-                "ID_FACE_MISMATCH"
-            )
-
-        # ------------------------------------------------------------
-        # Identity - AdaFace
-        # ------------------------------------------------------------
-
-        adaface_report = self.adaface_checker.compare(
-            str(reference_path),
-            str(generated_path)
+        prototype_result = self.face_checker.compare(
+            reference_path,
+            generated_path,
         )
 
-        adaface_label = adaface_report.get("label")
-        adaface_score = adaface_report.get("score")
+        return {
+            "primary": {
+                "model": "AdaFace",
+                "score": float(
+                    adaface_result["score"]
+                ),
+                "label": adaface_result["label"],
+            },
+            "prototype_evidence": {
+                "model": "PixelFacePrototype",
+                "score": float(
+                    prototype_result["score"]
+                ),
+                "label": prototype_result["label"],
+            },
+        }
 
-        if adaface_label == "DIFFERENT_IDENTITY":
-            if "ID_FACE_MISMATCH" not in reason_codes:
-                reason_codes.append(
-                    "ID_FACE_MISMATCH"
-                )
+    # ================================================================
+    # Visual checks
+    # ================================================================
+
+    def _run_visual_checks(
+        self,
+        reference_path,
+        generated_path,
+    ):
+        """
+        Run visual consistency checks.
+        """
 
         # ------------------------------------------------------------
         # SSIM
         # ------------------------------------------------------------
 
-        ssim_score = calculate_ssim(
-            str(reference_path),
-            str(generated_path)
+        ssim_score = float(
+            calculate_ssim(
+                reference_path,
+                generated_path,
+            )
         )
 
-        if ssim_score < 0.90:
-            reason_codes.append(
-                "VISUAL_STRUCTURAL_CHANGE"
+        # ------------------------------------------------------------
+        # LPIPS
+        # ------------------------------------------------------------
+
+        lpips_score = float(
+            calculate_lpips(
+                reference_path,
+                generated_path,
+            )
+        )
+
+        # ------------------------------------------------------------
+        # CLIP
+        # ------------------------------------------------------------
+
+        clip_score = float(
+            calculate_clip_similarity(
+                reference_path,
+                generated_path,
+            )
+        )
+
+        # ------------------------------------------------------------
+        # DINOv3
+        # ------------------------------------------------------------
+
+        dinov3_result = (
+            self.dinov3_checker.compare(
+                reference_path,
+                generated_path,
+            )
+        )
+
+        # ------------------------------------------------------------
+        # Object / environment
+        # ------------------------------------------------------------
+
+        object_environment_result = (
+            self.object_environment_checker.compare(
+                reference_path,
+                generated_path,
+            )
+        )
+
+        # ------------------------------------------------------------
+        # Visual drift fallback
+        # ------------------------------------------------------------
+
+        fallback_result = None
+
+        if (
+            ssim_score < 0.75
+            and lpips_score > 0.15
+            and clip_score < 0.95
+        ):
+            fallback_score = (
+                ssim_score
+                + clip_score
+                + (
+                    1.0
+                    - min(lpips_score, 1.0)
+                )
+            ) / 3.0
+
+            fallback_result = {
+                "label": "VISUAL_DRIFT_FALLBACK",
+                "score": float(
+                    fallback_score
+                ),
+            }
+
+        return {
+            "ssim": ssim_score,
+            "lpips": lpips_score,
+            "clip": clip_score,
+            "dinov3": dinov3_result,
+            "object_environment": (
+                object_environment_result
+            ),
+            "visual_drift_fallback": (
+                fallback_result
+            ),
+        }
+
+    # ================================================================
+    # Reason codes
+    # ================================================================
+
+    def _build_reason_codes(
+        self,
+        identity,
+        visual,
+    ):
+        reason_codes = []
+
+        # ------------------------------------------------------------
+        # Identity
+        # ------------------------------------------------------------
+
+        identity_primary = identity["primary"]
+
+        identity_label = (
+            identity_primary["label"]
+        )
+
+        identity_reason_map = {
+            "REFERENCE_FACE_MISSING":
+                "ID_REFERENCE_FACE_MISSING",
+
+            "GENERATED_FACE_MISSING":
+                "ID_FACE_MISSING",
+
+            "DIFFERENT_IDENTITY":
+                "ID_FACE_MISMATCH",
+        }
+
+        if identity_label in identity_reason_map:
+            self._add_reason(
+                reason_codes,
+                identity_reason_map[
+                    identity_label
+                ],
+            )
+
+        # ------------------------------------------------------------
+        # SSIM
+        # ------------------------------------------------------------
+
+        if visual["ssim"] < 0.90:
+            self._add_reason(
+                reason_codes,
+                "VISUAL_STRUCTURAL_CHANGE",
             )
 
         # ------------------------------------------------------------
         # LPIPS
         # ------------------------------------------------------------
 
-        lpips_score = calculate_lpips(
-            str(reference_path),
-            str(generated_path)
-        )
-
-        if lpips_score > 0.30:
-            reason_codes.append(
-                "VISUAL_PERCEPTUAL_CHANGE"
+        if visual["lpips"] > 0.30:
+            self._add_reason(
+                reason_codes,
+                "VISUAL_PERCEPTUAL_CHANGE",
             )
 
         # ------------------------------------------------------------
         # CLIP
         # ------------------------------------------------------------
 
-        clip_score = calculate_clip_similarity(
-            str(reference_path),
-            str(generated_path)
-        )
-
-        if clip_score < 0.85:
-            reason_codes.append(
-                "VISUAL_LOW_SIMILARITY"
+        if visual["clip"] < 0.85:
+            self._add_reason(
+                reason_codes,
+                "VISUAL_LOW_SIMILARITY",
             )
 
         # ------------------------------------------------------------
         # DINOv3
         # ------------------------------------------------------------
 
-        dinov3_report = self.dinov3_checker.compare(
-            str(reference_path),
-            str(generated_path)
+        dinov3 = visual.get(
+            "dinov3",
+            {},
         )
 
-        if dinov3_report.get("available", False):
-
-            if dinov3_report.get("label") == "VISUAL_DRIFT":
-
-                reason_code = dinov3_report.get(
+        if dinov3.get("label") == "VISUAL_DRIFT":
+            self._add_reason(
+                reason_codes,
+                dinov3.get(
                     "reason_code",
-                    "VISUAL_DINOV3_DRIFT"
-                )
-
-                if reason_code not in reason_codes:
-                    reason_codes.append(
-                        reason_code
-                    )
-
-        # ------------------------------------------------------------
-        # Object + environment
-        # ------------------------------------------------------------
-
-        object_environment_report = (
-            self.object_environment_checker.compare(
-                str(reference_path),
-                str(generated_path)
+                    "VISUAL_DINOV3_DRIFT",
+                ),
             )
+
+        # ------------------------------------------------------------
+        # Object / environment
+        # ------------------------------------------------------------
+
+        object_environment = visual.get(
+            "object_environment",
+            {},
         )
 
-        object_report = object_environment_report.get(
+        object_result = object_environment.get(
             "object",
-            {}
+            {},
         )
 
-        environment_report = object_environment_report.get(
-            "environment",
-            {}
+        environment_result = (
+            object_environment.get(
+                "environment",
+                {},
+            )
         )
 
-        if object_report.get("label") == "OBJECT_DRIFT":
-            reason_codes.append(
-                "VISUAL_OBJECT_DRIFT"
+        if (
+            object_result.get("label")
+            == "OBJECT_DRIFT"
+        ):
+            self._add_reason(
+                reason_codes,
+                "VISUAL_OBJECT_DRIFT",
             )
 
-        if environment_report.get("label") == "ENVIRONMENT_DRIFT":
-            reason_codes.append(
-                "VISUAL_ENVIRONMENT_DRIFT"
+        if (
+            environment_result.get("label")
+            == "ENVIRONMENT_DRIFT"
+        ):
+            self._add_reason(
+                reason_codes,
+                "VISUAL_ENVIRONMENT_DRIFT",
             )
 
         # ------------------------------------------------------------
-        # Fallback visual drift
+        # Fallback
         # ------------------------------------------------------------
 
-        fallback_triggered = False
+        fallback = visual.get(
+            "visual_drift_fallback"
+        )
 
-        if not dinov3_report.get("available", False):
+        if fallback is not None:
+            self._add_reason(
+                reason_codes,
+                "VISUAL_DRIFT_FALLBACK",
+            )
 
-            if (
-                ssim_score < 0.75
-                and lpips_score > 0.15
-                and clip_score < 0.95
-            ):
-                fallback_triggered = True
+        return reason_codes
 
-                reason_codes.append(
-                    "VISUAL_DRIFT_FALLBACK"
-                )
+    # ================================================================
+    # Day 1 - Image analysis
+    # ================================================================
 
-        # ------------------------------------------------------------
-        # Remove duplicate reason codes
-        # ------------------------------------------------------------
+    def analyze(
+        self,
+        reference_path,
+        generated_path,
+        output_path=None,
+    ):
+        """
+        Analyze one reference image against one generated image.
 
-        reason_codes = list(
-            dict.fromkeys(reason_codes)
+        This preserves the Day 1 result structure.
+        """
+
+        reference_path = str(
+            reference_path
+        )
+
+        generated_path = str(
+            generated_path
         )
 
         # ------------------------------------------------------------
-        # Day 1 decision
+        # Identity
         # ------------------------------------------------------------
 
-        if reason_codes:
-            decision = "FAIL"
-        else:
-            decision = "PASS"
+        identity = self._run_identity_checks(
+            reference_path,
+            generated_path,
+        )
 
         # ------------------------------------------------------------
-        # Report
+        # Visual
         # ------------------------------------------------------------
 
-        report = {
-            "reference": str(reference_path),
+        visual = self._run_visual_checks(
+            reference_path,
+            generated_path,
+        )
 
-            "generated": str(generated_path),
+        # ------------------------------------------------------------
+        # Reason codes
+        # ------------------------------------------------------------
 
-            "identity": {
-                "primary": {
-                    "model": "AdaFace",
-                    "score": adaface_score,
-                    "label": adaface_label
-                },
+        reason_codes = (
+            self._build_reason_codes(
+                identity,
+                visual,
+            )
+        )
 
-                "prototype_evidence": {
-                    "model": "PixelFacePrototype",
-                    "score": identity_score,
-                    "label": identity_label
-                }
-            },
+        # ------------------------------------------------------------
+        # Decision
+        # ------------------------------------------------------------
 
-            "visual": {
-                "ssim": ssim_score,
+        decision = (
+            "PASS"
+            if not reason_codes
+            else "FAIL"
+        )
 
-                "lpips": lpips_score,
+        # ------------------------------------------------------------
+        # Component scores
+        # ------------------------------------------------------------
 
-                "clip": clip_score,
+        component_scores = {
+            "identity": identity,
 
-                "dinov3": dinov3_report,
+            "adaface": identity[
+                "primary"
+            ],
 
-                "object_environment": {
-                    "object": object_report,
-                    "environment": environment_report
-                },
+            "ssim": visual[
+                "ssim"
+            ],
 
-                "visual_drift_fallback": {
-                    "enabled": not dinov3_report.get(
-                        "available",
-                        False
-                    ),
+            "lpips": visual[
+                "lpips"
+            ],
 
-                    "triggered": fallback_triggered,
+            "clip": visual[
+                "clip"
+            ],
 
-                    "method": "SSIM + LPIPS + CLIP",
+            "dinov3": visual[
+                "dinov3"
+            ],
 
-                    "reason": (
-                        "DINOv3 available; "
-                        "fallback not required."
-                        if dinov3_report.get(
-                            "available",
-                            False
-                        )
-                        else
-                        "DINOv3 unavailable; "
-                        "fallback evaluated."
-                    )
-                }
-            },
+            "object_environment": (
+                visual[
+                    "object_environment"
+                ]
+            ),
+        }
+
+        # ------------------------------------------------------------
+        # Final result
+        # ------------------------------------------------------------
+
+        result = {
+            "reference": reference_path,
+
+            "generated": generated_path,
+
+            "identity": identity,
+
+            "visual": visual,
+
+            "component_scores": (
+                component_scores
+            ),
 
             "decision": decision,
 
-            "reason_codes": reason_codes
+            "reason_codes": reason_codes,
         }
 
-        return report
+        # ------------------------------------------------------------
+        # Optional JSON output
+        # ------------------------------------------------------------
+
+        if output_path:
+            output_path = Path(
+                output_path
+            )
+
+            output_path.parent.mkdir(
+                parents=True,
+                exist_ok=True,
+            )
+
+            with output_path.open(
+                "w",
+                encoding="utf-8",
+            ) as file:
+                json.dump(
+                    result,
+                    file,
+                    indent=2,
+                )
+
+        return result
 
     # ================================================================
-    # DAY 2 - DETERMINISTIC VIDEO FRAME SAMPLING
+    # Day 2 - Deterministic video sampling
     # ================================================================
 
     def sample_video_frames(
         self,
         video_path,
         output_dir,
-        num_frames=5
+        sample_count=5,
     ):
         """
-        Deterministically sample evenly spaced frames.
+        Deterministically sample frames from an MP4.
 
         Example:
 
-        25 frames + 5 samples
+            25 frames
+            5 samples
 
-        -> 0
-        -> 6
-        -> 12
-        -> 18
-        -> 24
+            [0, 6, 12, 18, 24]
         """
 
-        video_path = Path(video_path)
-        output_dir = Path(output_dir)
-
-        frames_dir = (
-            output_dir / "frames"
+        video_path = Path(
+            video_path
         )
 
-        frames_dir.mkdir(
+        output_dir = Path(
+            output_dir
+        )
+
+        if not video_path.exists():
+            raise FileNotFoundError(
+                f"Video not found: "
+                f"{video_path}"
+            )
+
+        output_dir.mkdir(
             parents=True,
-            exist_ok=True
+            exist_ok=True,
         )
 
-        capture = cv2.VideoCapture(
+        cap = cv2.VideoCapture(
             str(video_path)
         )
 
-        if not capture.isOpened():
-            raise RuntimeError(
-                f"Unable to open video: {video_path}"
+        if not cap.isOpened():
+            raise ValueError(
+                f"Unable to open video: "
+                f"{video_path}"
             )
 
         total_frames = int(
-            capture.get(
+            cap.get(
                 cv2.CAP_PROP_FRAME_COUNT
             )
         )
 
         fps = float(
-            capture.get(
+            cap.get(
                 cv2.CAP_PROP_FPS
             )
         )
 
         if total_frames <= 0:
-            capture.release()
+            cap.release()
 
-            raise RuntimeError(
-                f"Video contains no frames: "
-                f"{video_path}"
+            raise ValueError(
+                "Video contains no frames."
             )
 
-        if fps <= 0:
-            fps = 1.0
+        if sample_count <= 0:
+            cap.release()
+
+            raise ValueError(
+                "sample_count must be "
+                "greater than zero."
+            )
 
         sample_count = min(
-            num_frames,
-            total_frames
+            sample_count,
+            total_frames,
         )
 
-        frame_indices = np.linspace(
+        frame_indexes = np.linspace(
             0,
             total_frames - 1,
             sample_count,
-            dtype=int
+            dtype=int,
+        ).tolist()
+
+        frame_indexes = sorted(
+            set(frame_indexes)
         )
 
-        frame_indices = list(
-            dict.fromkeys(
-                frame_indices.tolist()
-            )
-        )
+        extracted_frames = []
 
-        sampled_frames = []
+        current_index = 0
 
-        for sample_number, frame_index in enumerate(
-            frame_indices,
-            start=1
-        ):
-
-            capture.set(
-                cv2.CAP_PROP_POS_FRAMES,
-                frame_index
-            )
-
-            success, frame = capture.read()
+        while True:
+            success, frame = cap.read()
 
             if not success:
-                capture.release()
+                break
 
-                raise RuntimeError(
-                    f"Unable to read frame "
-                    f"{frame_index} from "
-                    f"{video_path}"
-                )
+            if current_index in frame_indexes:
 
-            timestamp_s = (
-                frame_index / fps
-            )
-
-            output_file = (
-                frames_dir
-                / (
-                    f"frame_{sample_number:02d}"
-                    f"_index_{frame_index:06d}.jpg"
-                )
-            )
-
-            written = cv2.imwrite(
-                str(output_file),
-                frame
-            )
-
-            if not written:
-                capture.release()
-
-                raise RuntimeError(
-                    f"Unable to write frame: "
-                    f"{output_file}"
-                )
-
-            sampled_frames.append(
-                {
-                    "sample_number": sample_number,
-
-                    "frame_index": int(
-                        frame_index
-                    ),
-
-                    "timestamp_s": round(
-                        timestamp_s,
-                        4
-                    ),
-
-                    "file": str(
-                        output_file
+                frame_file = (
+                    output_dir
+                    / (
+                        f"frame_"
+                        f"{len(extracted_frames) + 1:02d}"
+                        f"_index_"
+                        f"{current_index:06d}.jpg"
                     )
-                }
-            )
+                )
 
-        capture.release()
+                success_write = cv2.imwrite(
+                    str(frame_file),
+                    frame,
+                )
+
+                if not success_write:
+                    cap.release()
+
+                    raise ValueError(
+                        "Failed to write "
+                        f"frame: {frame_file}"
+                    )
+
+                timestamp_s = (
+                    current_index / fps
+                    if fps > 0
+                    else 0.0
+                )
+
+                extracted_frames.append(
+                    {
+                        "sample_number": (
+                            len(
+                                extracted_frames
+                            )
+                            + 1
+                        ),
+
+                        "frame_index": (
+                            current_index
+                        ),
+
+                        "timestamp_s": float(
+                            timestamp_s
+                        ),
+
+                        "file": str(
+                            frame_file
+                        ),
+                    }
+                )
+
+            current_index += 1
+
+        cap.release()
+
+        if len(extracted_frames) != len(
+            frame_indexes
+        ):
+            raise ValueError(
+                "Unable to extract all "
+                "requested video frames."
+            )
 
         return {
-            "video": str(video_path),
-
             "total_frames": total_frames,
 
             "fps": fps,
 
-            "requested_frames": num_frames,
-
-            "sampling_rule": (
-                "Evenly spaced frame positions "
-                "from first frame through last frame."
+            "sample_count": len(
+                extracted_frames
             ),
 
-            "sampled_frames": sampled_frames
+            "frames": extracted_frames,
         }
 
     # ================================================================
-    # DAY 2 - CLIP DECISION
+    # ClipMetadata contract
+    # ================================================================
+
+    REQUIRED_CLIP_METADATA_FIELDS = {
+        "clip_id",
+        "shot_id",
+        "mode",
+        "source_type",
+        "file",
+        "duration_s",
+        "fps",
+        "width",
+        "height",
+        "aspect_ratio",
+        "codec",
+        "model",
+        "settings",
+        "reference_ids",
+        "motion_controls",
+        "seed",
+        "status",
+        "failure_reason",
+        "checksum_sha256",
+    }
+
+    # ================================================================
+    # Load ClipMetadata
+    # ================================================================
+
+    def _load_clip_metadata(
+        self,
+        metadata_path,
+    ):
+        """
+        Load and validate ClipMetadata.
+
+        The original shared contract fields
+        remain unchanged.
+        """
+
+        metadata_path = Path(
+            metadata_path
+        )
+
+        if not metadata_path.exists():
+            raise FileNotFoundError(
+                f"ClipMetadata file not found: "
+                f"{metadata_path}"
+            )
+
+        with metadata_path.open(
+            "r",
+            encoding="utf-8",
+        ) as file:
+            metadata = json.load(file)
+
+        missing_fields = sorted(
+            self.REQUIRED_CLIP_METADATA_FIELDS
+            - set(metadata.keys())
+        )
+
+        if missing_fields:
+            raise ValueError(
+                "ClipMetadata is missing "
+                "required fields: "
+                f"{missing_fields}"
+            )
+
+        return metadata
+
+    # ================================================================
+    # SHA-256
+    # ================================================================
+
+    @staticmethod
+    def _calculate_sha256(
+        video_path,
+    ):
+        sha256 = hashlib.sha256()
+
+        with open(
+            video_path,
+            "rb",
+        ) as file:
+
+            for chunk in iter(
+                lambda: file.read(
+                    1024 * 1024
+                ),
+                b"",
+            ):
+                sha256.update(chunk)
+
+        return sha256.hexdigest()
+
+    # ================================================================
+    # Verify ClipMetadata
+    # ================================================================
+
+    def _verify_clip_metadata(
+        self,
+        metadata,
+        video_path,
+    ):
+        """
+        Verify ClipMetadata against the
+        actual video file.
+        """
+
+        video_path = Path(
+            video_path
+        )
+
+        # ------------------------------------------------------------
+        # SHA-256
+        # ------------------------------------------------------------
+
+        actual_checksum = (
+            self._calculate_sha256(
+                video_path
+            )
+        )
+
+        expected_checksum = str(
+            metadata[
+                "checksum_sha256"
+            ]
+        )
+
+        checksum_verified = (
+            actual_checksum.lower()
+            == expected_checksum.lower()
+        )
+
+        # ------------------------------------------------------------
+        # Open video
+        # ------------------------------------------------------------
+
+        cap = cv2.VideoCapture(
+            str(video_path)
+        )
+
+        if not cap.isOpened():
+            raise ValueError(
+                f"Unable to open video: "
+                f"{video_path}"
+            )
+
+        actual_frame_count = int(
+            cap.get(
+                cv2.CAP_PROP_FRAME_COUNT
+            )
+        )
+
+        actual_fps = float(
+            cap.get(
+                cv2.CAP_PROP_FPS
+            )
+        )
+
+        actual_width = int(
+            cap.get(
+                cv2.CAP_PROP_FRAME_WIDTH
+            )
+        )
+
+        actual_height = int(
+            cap.get(
+                cv2.CAP_PROP_FRAME_HEIGHT
+            )
+        )
+
+        cap.release()
+
+        # ------------------------------------------------------------
+        # Expected values
+        # ------------------------------------------------------------
+
+        expected_frame_count = int(
+            metadata[
+                "settings"
+            ][
+                "frame_count"
+            ]
+        )
+
+        expected_fps = float(
+            metadata["fps"]
+        )
+
+        expected_width = int(
+            metadata["width"]
+        )
+
+        expected_height = int(
+            metadata["height"]
+        )
+
+        # ------------------------------------------------------------
+        # Verification
+        # ------------------------------------------------------------
+
+        frame_count_verified = (
+            actual_frame_count
+            == expected_frame_count
+        )
+
+        fps_verified = (
+            abs(
+                actual_fps
+                - expected_fps
+            )
+            < 1e-6
+        )
+
+        resolution_verified = (
+            actual_width
+            == expected_width
+            and actual_height
+            == expected_height
+        )
+
+        return {
+            "checksum_verified": (
+                checksum_verified
+            ),
+
+            "frame_count_verified": (
+                frame_count_verified
+            ),
+
+            "fps_verified": (
+                fps_verified
+            ),
+
+            "resolution_verified": (
+                resolution_verified
+            ),
+
+            "actual_checksum": (
+                actual_checksum
+            ),
+
+            "expected_checksum": (
+                expected_checksum
+            ),
+
+            "actual_frame_count": (
+                actual_frame_count
+            ),
+
+            "expected_frame_count": (
+                expected_frame_count
+            ),
+
+            "actual_fps": (
+                actual_fps
+            ),
+
+            "expected_fps": (
+                expected_fps
+            ),
+
+            "actual_width": (
+                actual_width
+            ),
+
+            "expected_width": (
+                expected_width
+            ),
+
+            "actual_height": (
+                actual_height
+            ),
+
+            "expected_height": (
+                expected_height
+            ),
+        }
+
+    # ================================================================
+    # Day 2 clip decision
     # ================================================================
 
     def _determine_clip_decision(
         self,
-        frame_reports
+        reason_codes,
     ):
         """
-        Convert frame-level results into the shared
-        Day 2 decision vocabulary.
+        Map QA reason codes to:
 
-        PASS:
-            No sampled frame contains a failure.
-
-        AUTO_RETRY:
-            A clear identity or visual drift is detected.
-
-        HUMAN_REVIEW:
-            Visual degradation exists but does not
-            meet the automatic retry criteria.
+            PASS
+            AUTO_RETRY
+            HUMAN_REVIEW
         """
 
-        clear_failure_codes = {
+        auto_retry_reasons = {
             "ID_FACE_MISMATCH",
             "ID_FACE_MISSING",
-
+            "ID_REFERENCE_FACE_MISSING",
             "VISUAL_DINOV3_DRIFT",
-
             "VISUAL_OBJECT_DRIFT",
-
             "VISUAL_ENVIRONMENT_DRIFT",
-
-            "VISUAL_DRIFT_FALLBACK"
+            "VISUAL_DRIFT_FALLBACK",
         }
 
-        review_codes = {
+        human_review_reasons = {
             "VISUAL_STRUCTURAL_CHANGE",
-
             "VISUAL_PERCEPTUAL_CHANGE",
-
-            "VISUAL_LOW_SIMILARITY"
+            "VISUAL_LOW_SIMILARITY",
         }
-
-        all_reason_codes = []
-
-        for report in frame_reports:
-
-            all_reason_codes.extend(
-                report.get(
-                    "reason_codes",
-                    []
-                )
-            )
-
-        # Remove duplicates while preserving order.
-        all_reason_codes = list(
-            dict.fromkeys(
-                all_reason_codes
-            )
-        )
 
         # ------------------------------------------------------------
-        # AUTO_RETRY has highest priority
+        # PASS
+        # ------------------------------------------------------------
+
+        if not reason_codes:
+            return "PASS"
+
+        # ------------------------------------------------------------
+        # AUTO_RETRY
         # ------------------------------------------------------------
 
         if any(
-            code in clear_failure_codes
-            for code in all_reason_codes
+            reason in auto_retry_reasons
+            for reason in reason_codes
         ):
             return "AUTO_RETRY"
 
@@ -542,38 +1000,40 @@ class QAEngine:
         # ------------------------------------------------------------
 
         if any(
-            code in review_codes
-            for code in all_reason_codes
+            reason in human_review_reasons
+            for reason in reason_codes
         ):
             return "HUMAN_REVIEW"
 
         # ------------------------------------------------------------
-        # PASS
+        # Unknown failure
         # ------------------------------------------------------------
 
-        return "PASS"
+        return "HUMAN_REVIEW"
 
     # ================================================================
-    # DAY 2 - VIDEO QA
+    # Day 2 - Analyze clip
     # ================================================================
 
     def analyze_clip(
         self,
         reference_path,
         video_path,
-        output_dir=None,
-        num_frames=5,
-        qa_id="qa_clip_001",
-        clip_id="clip_001"
+        output_dir,
+        sample_count=5,
+        clip_metadata_path=None,
+        num_frames=None,
+        qa_id=None,
+        clip_id=None,
     ):
         """
-        Compare a reference image against frames
-        sampled from an MP4 video.
+        Analyze a reference image against deterministic
+        sampled frames from an MP4 clip.
 
-        Returns a shared QAResult-style object.
+        Produces the Day 2 QAResult contract.
         """
 
-        reference_path = Path(
+        reference_path = str(
             reference_path
         )
 
@@ -581,179 +1041,392 @@ class QAEngine:
             video_path
         )
 
-        # ------------------------------------------------------------
-        # Output directory
-        # ------------------------------------------------------------
-
-        if output_dir is None:
-
-            output_dir = (
-                Path("mock_data")
-                / "outputs"
-                / clip_id
-            )
-
-        else:
-
-            output_dir = Path(
-                output_dir
-            )
+        output_dir = Path(
+            output_dir
+        )
 
         output_dir.mkdir(
             parents=True,
-            exist_ok=True
+            exist_ok=True,
         )
+
+        # ------------------------------------------------------------
+        # num_frames overrides sample_count
+        # ------------------------------------------------------------
+
+        if num_frames is not None:
+            sample_count = num_frames
+
+        # ------------------------------------------------------------
+        # Metadata
+        # ------------------------------------------------------------
+
+        metadata = None
+        metadata_file = None
+        verification = None
+
+        if clip_metadata_path:
+
+            metadata_file = Path(
+                clip_metadata_path
+            ).resolve()
+
+            metadata = (
+                self._load_clip_metadata(
+                    metadata_file
+                )
+            )
+
+            # --------------------------------------------------------
+            # FIX 1:
+            # metadata_file must be inside clip_metadata.
+            # --------------------------------------------------------
+
+            metadata[
+                "metadata_file"
+            ] = str(
+                metadata_file
+            )
+
+            # --------------------------------------------------------
+            # ClipMetadata clip_id is authoritative.
+            # --------------------------------------------------------
+
+            clip_id = metadata[
+                "clip_id"
+            ]
+
+            # --------------------------------------------------------
+            # Verify video against metadata.
+            # --------------------------------------------------------
+
+            verification = (
+                self._verify_clip_metadata(
+                    metadata,
+                    video_path,
+                )
+            )
+
+            # --------------------------------------------------------
+            # FIX 2:
+            # verification must also be inside clip_metadata.
+            # --------------------------------------------------------
+
+            metadata[
+                "verification"
+            ] = verification
+
+        # ------------------------------------------------------------
+        # Default clip ID
+        # ------------------------------------------------------------
+
+        if clip_id is None:
+            clip_id = video_path.stem
+
+        # ------------------------------------------------------------
+        # QA ID
+        # ------------------------------------------------------------
+
+        if qa_id is None:
+            qa_id = (
+                f"qa_{clip_id}"
+            )
 
         # ------------------------------------------------------------
         # Sample frames
         # ------------------------------------------------------------
 
-        sampling = self.sample_video_frames(
-            video_path=video_path,
+        frames_dir = (
+            output_dir
+            / "frames"
+        )
 
-            output_dir=output_dir,
-
-            num_frames=num_frames
+        sampling_result = (
+            self.sample_video_frames(
+                video_path=video_path,
+                output_dir=frames_dir,
+                sample_count=sample_count,
+            )
         )
 
         frame_reports = []
 
-        evidence_files = []
+        all_reason_codes = []
 
-        # ------------------------------------------------------------
+        # ============================================================
         # Analyze each sampled frame
-        # ------------------------------------------------------------
+        # ============================================================
 
-        for sampled_frame in sampling[
-            "sampled_frames"
-        ]:
+        for frame_info in (
+            sampling_result["frames"]
+        ):
 
-            frame_path = Path(
-                sampled_frame["file"]
-            )
-
-            frame_report = self.analyze(
+            frame_result = self.analyze(
                 reference_path,
-                frame_path
+                frame_info["file"],
             )
 
-            frame_result = {
-                "sample_number": sampled_frame[
-                    "sample_number"
-                ],
+            frame_reason_codes = (
+                frame_result.get(
+                    "reason_codes",
+                    [],
+                )
+            )
 
-                "frame_index": sampled_frame[
-                    "frame_index"
-                ],
+            for reason in frame_reason_codes:
 
-                "timestamp_s": sampled_frame[
-                    "timestamp_s"
-                ],
+                self._add_reason(
+                    all_reason_codes,
+                    reason,
+                )
 
-                "identity": frame_report[
-                    "identity"
-                ],
+            # --------------------------------------------------------
+            # Complete frame-level evidence
+            # --------------------------------------------------------
 
-                "visual": frame_report[
-                    "visual"
-                ],
+            frame_report = {
+                "sample_number": (
+                    frame_info[
+                        "sample_number"
+                    ]
+                ),
 
-                "decision": frame_report[
-                    "decision"
-                ],
+                "frame_index": (
+                    frame_info[
+                        "frame_index"
+                    ]
+                ),
 
-                "reason_codes": frame_report[
-                    "reason_codes"
-                ]
+                "timestamp_s": (
+                    frame_info[
+                        "timestamp_s"
+                    ]
+                ),
+
+                "file": (
+                    frame_info[
+                        "file"
+                    ]
+                ),
+
+                "identity": (
+                    frame_result[
+                        "identity"
+                    ]
+                ),
+
+                "visual": (
+                    frame_result[
+                        "visual"
+                    ]
+                ),
+
+                "component_scores": (
+                    frame_result[
+                        "component_scores"
+                    ]
+                ),
+
+                "decision": (
+                    frame_result[
+                        "decision"
+                    ]
+                ),
+
+                "reason_codes": (
+                    frame_reason_codes
+                ),
             }
 
             frame_reports.append(
-                frame_result
+                frame_report
             )
 
-            evidence_files.append(
-                str(frame_path)
-            )
-
-        # ------------------------------------------------------------
+        # ============================================================
         # Clip-level decision
-        # ------------------------------------------------------------
+        # ============================================================
 
         clip_decision = (
             self._determine_clip_decision(
-                frame_reports
+                all_reason_codes
             )
         )
 
-        # ------------------------------------------------------------
-        # Aggregate reason codes
-        # ------------------------------------------------------------
+        # ============================================================
+        # Sampling evidence
+        # ============================================================
 
-        reason_codes = []
+        sampled_frames = [
+            {
+                "frame_index": (
+                    frame[
+                        "frame_index"
+                    ]
+                ),
 
-        for frame_report in frame_reports:
+                "file": (
+                    frame[
+                        "file"
+                    ]
+                ),
+            }
 
-            for code in frame_report.get(
-                "reason_codes",
-                []
-            ):
+            for frame in (
+                sampling_result[
+                    "frames"
+                ]
+            )
+        ]
 
-                if code not in reason_codes:
+        frames_sampled = [
+            frame[
+                "frame_index"
+            ]
 
-                    reason_codes.append(
-                        code
-                    )
+            for frame in (
+                sampling_result[
+                    "frames"
+                ]
+            )
+        ]
 
-        # ------------------------------------------------------------
-        # Shared QAResult
-        # ------------------------------------------------------------
+        sampling = {
+            "sample_count": (
+                sampling_result[
+                    "sample_count"
+                ]
+            ),
 
-        qa_result = {
+            "sampled_frames": (
+                sampled_frames
+            ),
+
+            "frames_sampled": (
+                frames_sampled
+            ),
+        }
+
+        # ============================================================
+        # Evidence files
+        # ============================================================
+
+        evidence_files = [
+            frame["file"]
+            for frame in frame_reports
+        ]
+
+        # ============================================================
+        # QAResult
+        # ============================================================
+
+        result = {
             "qa_id": qa_id,
 
             "clip_id": clip_id,
 
-            "qa_type": "IDENTITY_VISUAL",
+            "qa_type": (
+                "IDENTITY_VISUAL"
+            ),
 
             "component_scores": {
-                "frames": frame_reports
+                "frames": frame_reports,
             },
 
-            "reason_codes": reason_codes,
+            "reason_codes": (
+                all_reason_codes
+            ),
 
-            "decision": clip_decision,
+            "decision": (
+                clip_decision
+            ),
 
-            "evidence_files": evidence_files,
+            "evidence_files": (
+                evidence_files
+            ),
 
-            "sampling": sampling
+            "sampling": sampling,
         }
 
-        # ------------------------------------------------------------
-        # Save QAResult
-        # ------------------------------------------------------------
+        # ============================================================
+        # Add ClipMetadata
+        # ============================================================
+
+        if metadata is not None:
+
+            # IMPORTANT:
+            # metadata already contains:
+            #
+            # metadata_file
+            # verification
+            #
+            # because they were added above.
+
+            result[
+                "clip_metadata"
+            ] = metadata
+
+            # Keep top-level compatibility fields too.
+
+            result[
+                "metadata_file"
+            ] = str(
+                metadata_file
+            )
+
+            result[
+                "verification"
+            ] = verification
+
+        # ============================================================
+        # QAResult JSON path
+        # ============================================================
 
         qa_result_path = (
             output_dir
-            / f"{clip_id}_QAResult.json"
+            / (
+                f"{clip_id}"
+                "_QAResult.json"
+            )
         )
 
-        with open(
-            qa_result_path,
+        # ------------------------------------------------------------
+        # Include QAResult JSON itself as evidence
+        # ------------------------------------------------------------
+
+        result[
+            "evidence_files"
+        ].append(
+            str(
+                qa_result_path
+            )
+        )
+
+        # ============================================================
+        # Save QAResult
+        # ============================================================
+
+        with qa_result_path.open(
             "w",
-            encoding="utf-8"
+            encoding="utf-8",
         ) as file:
 
             json.dump(
-                qa_result,
+                result,
                 file,
-                indent=2
+                indent=2,
             )
 
-        # Add QAResult file to returned evidence.
-        qa_result[
-            "evidence_files"
-        ].append(
-            str(qa_result_path)
-        )
+        return result
 
-        return qa_result
+
+# ====================================================================
+# Standalone check
+# ====================================================================
+
+if __name__ == "__main__":
+
+    engine = QAEngine()
+
+    print(
+        "QAEngine loaded successfully."
+    )
