@@ -1,0 +1,31 @@
+{
+  "clip_id": "test_video_failure",
+  "shot_id": "shot_member7_day2_failure_001",
+  "mode": "I2V",
+  "source_type": "mock",
+  "file": "mock_data/inputs/test_video.mp4",
+  "duration_s": 5.0,
+  "fps": 5.0,
+  "width": 640,
+  "height": 480,
+  "aspect_ratio": "4:3",
+  "codec": "mp4v",
+  "model": "mock-opencv-blur",
+  "settings": {
+    "frame_count": 25,
+    "sampling_count": 5,
+    "failure_frames": [12, 13, 14],
+    "failure_type": "deliberate_blur"
+  },
+  "reference_ids": [
+    "reference_adaface"
+  ],
+  "motion_controls": {
+    "type": "none",
+    "deterministic": true
+  },
+  "seed": null,
+  "status": "SUCCESS",
+  "failure_reason": null,
+  "checksum_sha256": "e3a256dbb7f6b1cf32cd01c24da58acf87305403719982c9253c242c4e5361b4"
+}

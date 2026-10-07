@@ -1,0 +1,29 @@
+{
+  "clip_id": "clean_test_video_h264_success",
+  "shot_id": "shot_member7_day2_success_001",
+  "mode": "I2V",
+  "source_type": "mock",
+  "file": "mock_data/inputs/clean_test_video_h264.mp4",
+  "duration_s": 5.0,
+  "fps": 5.0,
+  "width": 640,
+  "height": 480,
+  "aspect_ratio": "4:3",
+  "codec": "h264",
+  "model": "mock-opencv-clean",
+  "settings": {
+    "frame_count": 25,
+    "sampling_count": 5,
+    "failure_frames": [],
+    "failure_type": null
+  },
+  "reference_ids": ["reference_adaface"],
+  "motion_controls": {
+    "type": "none",
+    "deterministic": true
+  },
+  "seed": null,
+  "status": "SUCCESS",
+  "failure_reason": null,
+  "checksum_sha256": "0657ac259f5eec248f3b8100f7908b13884c4e010b63194839843f32de9bd730"
+}
