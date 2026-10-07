@@ -29,6 +29,166 @@ Instead, it retains component-level evidence and produces explicit reason codes 
 
 ---
 
+---
+
+## Reuse from Day 1
+
+Day 2 reuses the core identity and visual QA components developed during Day 1.
+
+The following components were retained:
+
+- AdaFace identity similarity
+- PixelFace Prototype identity evidence
+- SSIM structural similarity
+- LPIPS perceptual similarity
+- CLIP semantic similarity
+- DINOv3 visual drift detection
+- Object consistency checking
+- Environment consistency checking
+- Explicit QA reason codes
+- Component-level scoring and evidence
+
+The Day 1 image-level QA workflow remains available and was not replaced.
+
+Day 2 extends the existing QA capability from individual image comparisons to deterministic video-frame sampling and clip-level aggregation.
+
+---
+
+## What is New Today — Day 2
+
+Day 2 extends the Day 1 image-level QA module into a video-aware identity and visual consistency workflow.
+
+New functionality includes:
+
+- Deterministic frame sampling from MP4 clips
+- Fixed frame selection for repeatable testing
+- Per-frame identity and visual QA
+- Reuse of the existing QA scoring components for sampled frames
+- Clip-level aggregation of frame-level results
+- Explicit mapping from QA failures to `PASS`, `AUTO_RETRY`, and `HUMAN_REVIEW`
+- Retention of component-level evidence for every sampled frame
+- Structured clip-level `QAResult` JSON output
+- Deliberate video failure fixtures
+- Additional Day 2 visual transformation fixtures
+- Automated Day 2 tests
+- Fixture metadata and reproducibility information
+
+For a 25-frame test video using 5 samples, the deterministic sampled frame indexes are:
+
+```text
+0, 6, 12, 18, 24
+
+---
+
+## Day 2 Thresholds and Decision Mapping
+
+The QA engine uses component-level thresholds to identify identity and visual consistency problems.
+
+### Identity thresholds
+
+| Component | Threshold | Interpretation |
+|---|---:|---|
+| AdaFace | 0.40 | Lower similarity indicates identity mismatch |
+| Face identity checker | 0.90 | Lower similarity indicates identity mismatch |
+
+### Visual thresholds
+
+| Component | Threshold | Interpretation |
+|---|---:|---|
+| SSIM | 0.90 | Below threshold indicates structural change |
+| LPIPS | 0.30 | Above threshold indicates perceptual change |
+| CLIP | 0.85 | Below threshold indicates low semantic similarity |
+| DINOv3 | 0.80 | Below threshold indicates visual representation drift |
+| Object consistency | 0.70 | Below threshold indicates object drift |
+| Environment consistency | 0.70 | Below threshold indicates environment drift |
+
+These thresholds are used as configurable QA rules rather than as a single combined similarity score.
+
+### Clip-level decision mapping
+
+The Day 2 clip-level QA result uses the shared decision vocabulary:
+
+| Condition | Decision |
+|---|---|
+| No applicable failure reason codes across sampled frames | `PASS` |
+| Clear identity mismatch, missing face, DINOv3 drift, object drift, environment drift, or fallback visual drift | `AUTO_RETRY` |
+| Structural, perceptual, or semantic visual change requiring inspection | `HUMAN_REVIEW` |
+
+The final clip decision is based on the aggregated evidence from all deterministically sampled frames.
+
+Every frame retains its component scores and reason codes so that the final decision remains explainable.
+
+---
+
+## Day 2 QAResult Contract
+
+The clip-level QA output follows the shared QAResult structure.
+
+A generated result contains:
+
+- `qa_id` — unique QA result identifier
+- `clip_id` — identifier of the evaluated video clip
+- `qa_type` — `IDENTITY_VISUAL`
+- `component_scores` — frame-level component scores and evidence
+- `reason_codes` — explicit reasons for detected failures
+- `decision` — `PASS`, `AUTO_RETRY`, or `HUMAN_REVIEW`
+- `evidence_files` — generated evidence and comparison files
+- `sampling` — deterministic frame sampling information
+
+Example structure:
+
+```json
+{
+  "qa_id": "qa_example",
+  "clip_id": "test_clip",
+  "qa_type": "IDENTITY_VISUAL",
+  "component_scores": {
+    "frames": []
+  },
+  "reason_codes": [],
+  "decision": "PASS",
+  "evidence_files": [],
+  "sampling": {
+    "sample_count": 5
+  }
+}
+
+---
+
+## Day 2 Demo
+
+Day 2 was validated using both a clean video and a deliberately corrupted video.
+
+### Clean Video — PASS
+
+Input:
+
+```text
+mock_data/inputs/clean_test_video.mp4
+
+---
+
+## Day 2 Mock Data and Fixture Manifest
+
+Day 2 uses deterministic local fixtures so that QA behaviour can be reproduced without requiring a live AI-video generation service.
+
+The fixture manifest is:
+
+```text
+mock_data/manifest.json
+
+---
+
+### Assumptions
+
+- The reference image is available locally and is suitable for identity and visual comparison.
+- The input video is a readable MP4 file.
+- Video frame sampling is deterministic for a fixed sampling configuration.
+- The existing Day 1 QA components are available locally.
+- Component thresholds are configurable and may require calibration for production data.
+- Day 2 fixtures are intended for development and QA validation rather than production-quality video evaluation.
+
+
 ## QA Architecture
 
 The QA checks are independent evidence-producing components.

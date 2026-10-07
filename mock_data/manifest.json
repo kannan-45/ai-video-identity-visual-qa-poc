@@ -1,6 +1,26 @@
 {
   "module": "identity_visual_qa",
-  "version": "0.3",
+  "version": "0.4",
+  "metadata": {
+    "fixture_policy": "Deterministic local fixtures with explicit expected outcomes",
+    "public_dataset": {
+      "name": "COCO 2017 Validation Images",
+      "source": "Microsoft COCO",
+      "source_url": "https://cocodataset.org/",
+      "license": "See mock_data/inputs/coco/metadata.json; individual COCO image licenses may vary",
+      "usage": "Development and benchmarking only"
+    },
+    "local_identity_fixtures": {
+      "source": "Local/internal reference image",
+      "license": "Internal/local fixture; not a public dataset",
+      "seed": null
+    },
+    "day2_generator": {
+      "file": "mock_data/generate_day2_fixtures.py",
+      "random_seed": null,
+      "reproducibility": "Deterministic PIL transformations; no random operations"
+    }
+  },
   "fixtures": [
     {
       "id": "identity_positive_same_photo",
@@ -18,11 +38,10 @@
       "expected_decision": "FAIL",
       "failure": "object_replacement",
       "expected_reason_codes": [
-      "VISUAL_OBJECT_DRIFT"
-    ],
+        "VISUAL_OBJECT_DRIFT"
+      ],
       "type": "coco_object_environment_failure"
-    }
-
+    },
     {
       "id": "identity_positive_different_photo",
       "reference": "inputs/adaface/reference/reference_adaface.jpeg",
@@ -113,6 +132,133 @@
       "generated": "inputs/coco/images/000000000776.jpg",
       "expected_decision": "PASS",
       "type": "coco_object_environment_positive"
+    },
+    {
+      "id": "day2_brightness_high",
+      "reference": "inputs/adaface/reference/reference_adaface.jpeg",
+      "generated": "inputs/adaface/generated/generated_brightness_high.jpeg",
+      "expected_identity": "SAME_IDENTITY",
+      "expected_decision": "FAIL",
+      "failure": "brightness_increase",
+      "expected_reason_codes": [
+        "ID_FACE_MISMATCH"
+      ],
+      "type": "day2_visual_failure",
+      "reproducibility": {
+        "method": "PIL ImageEnhance.Brightness",
+        "parameter": 1.35,
+        "seed": null
+      }
+    },
+    {
+      "id": "day2_brightness_low",
+      "reference": "inputs/adaface/reference/reference_adaface.jpeg",
+      "generated": "inputs/adaface/generated/generated_brightness_low.jpeg",
+      "expected_identity": "SAME_IDENTITY",
+      "expected_decision": "FAIL",
+      "failure": "brightness_decrease",
+      "expected_reason_codes": [
+        "ID_FACE_MISMATCH",
+        "VISUAL_STRUCTURAL_CHANGE"
+      ],
+      "type": "day2_visual_failure",
+      "reproducibility": {
+        "method": "PIL ImageEnhance.Brightness",
+        "parameter": 0.65,
+        "seed": null
+      }
+    },
+    {
+      "id": "day2_colour_shift",
+      "reference": "inputs/adaface/reference/reference_adaface.jpeg",
+      "generated": "inputs/adaface/generated/generated_colour_shift.jpeg",
+      "expected_identity": "SAME_IDENTITY",
+      "expected_decision": "PASS",
+      "type": "day2_visual_positive",
+      "reproducibility": {
+        "method": "PIL ImageEnhance.Color",
+        "parameter": 1.8,
+        "seed": null
+      }
+    },
+    {
+      "id": "day2_strong_crop",
+      "reference": "inputs/adaface/reference/reference_adaface.jpeg",
+      "generated": "inputs/adaface/generated/generated_strong_crop.jpeg",
+      "expected_identity": "SAME_IDENTITY",
+      "expected_decision": "FAIL",
+      "failure": "strong_crop",
+      "expected_reason_codes": [
+        "VISUAL_STRUCTURAL_CHANGE",
+        "VISUAL_PERCEPTUAL_CHANGE",
+        "VISUAL_OBJECT_DRIFT"
+      ],
+      "type": "day2_visual_failure",
+      "reproducibility": {
+        "method": "PIL crop and resize",
+        "parameter": "18% horizontal and vertical margins",
+        "seed": null
+      }
+    },
+    {
+      "id": "day2_mild_blur",
+      "reference": "inputs/adaface/reference/reference_adaface.jpeg",
+      "generated": "inputs/adaface/generated/generated_mild_blur.jpeg",
+      "expected_identity": "SAME_IDENTITY",
+      "expected_decision": "FAIL",
+      "failure": "mild_blur",
+      "expected_reason_codes": [
+        "VISUAL_STRUCTURAL_CHANGE",
+        "VISUAL_LOW_SIMILARITY"
+      ],
+      "type": "day2_visual_failure",
+      "reproducibility": {
+        "method": "PIL ImageFilter.GaussianBlur",
+        "parameter": "radius=2",
+        "seed": null
+      }
+    },
+    {
+      "id": "day2_strong_visual_drift",
+      "reference": "inputs/adaface/reference/reference_adaface.jpeg",
+      "generated": "inputs/adaface/generated/generated_strong_visual_drift.jpeg",
+      "expected_identity": "SAME_IDENTITY",
+      "expected_decision": "FAIL",
+      "failure": "strong_visual_drift",
+      "expected_reason_codes": [
+        "ID_FACE_MISMATCH",
+        "VISUAL_STRUCTURAL_CHANGE",
+        "VISUAL_PERCEPTUAL_CHANGE",
+        "VISUAL_LOW_SIMILARITY",
+        "VISUAL_DINOV3_DRIFT"
+      ],
+      "type": "day2_visual_failure",
+      "reproducibility": {
+        "method": "PIL contrast, brightness and Gaussian blur",
+        "parameters": {
+          "contrast": 0.35,
+          "brightness": 1.25,
+          "blur_radius": 3
+        },
+        "seed": null
+      }
+    },
+    {
+      "id": "day2_zoom_transform",
+      "reference": "inputs/adaface/reference/reference_adaface.jpeg",
+      "generated": "inputs/adaface/generated/generated_zoom_transform.jpeg",
+      "expected_identity": "SAME_IDENTITY",
+      "expected_decision": "FAIL",
+      "failure": "zoom_transform",
+      "expected_reason_codes": [
+        "VISUAL_STRUCTURAL_CHANGE"
+      ],
+      "type": "day2_visual_failure",
+      "reproducibility": {
+        "method": "PIL crop and resize",
+        "parameter": "10% horizontal and vertical margins",
+        "seed": null
+      }
     }
   ]
 }
