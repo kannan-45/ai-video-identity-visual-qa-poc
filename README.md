@@ -192,7 +192,7 @@ The current calibration is a strong benchmark-based POC operating point, but LFW
 
 | Component | Threshold | Meaning |
 |---|---:|---|
-| AdaFace | 0.40 | Below threshold indicates identity mismatch |
+| AdaFace | 0.239 | Below threshold indicates identity mismatch |
 | Face identity checker | 0.90 | Below threshold indicates identity mismatch |
 | SSIM | 0.90 | Below threshold indicates structural change |
 | LPIPS | 0.30 | Above threshold indicates perceptual change |
