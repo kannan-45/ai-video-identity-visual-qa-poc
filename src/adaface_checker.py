@@ -58,7 +58,7 @@ class AdaFaceChecker:
 
         similarity = round(float(similarity), 4)
 
-        if similarity >= 0.40:
+        if similarity >= 0.239:
             label = "SAME_IDENTITY"
         else:
             label = "DIFFERENT_IDENTITY"
