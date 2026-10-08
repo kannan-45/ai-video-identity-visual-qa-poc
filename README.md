@@ -128,6 +128,66 @@ Reference image + MP4 + ClipMetadata
 
 RAFT motion analysis and LAB/CIEDE2000 color analysis are intentionally deferred.
 
+## AdaFace Threshold Calibration — Frozen POC Operating Point
+
+The AdaFace identity decision uses a frozen threshold of **0.239** for the current POC.
+
+### Calibration basis
+
+The threshold was selected using an identity-disjoint LFW benchmark:
+
+| Dataset | Same-identity pairs | Different-identity pairs |
+|---|---:|---:|
+| Calibration | 3,993 | 3,998 |
+| Held-out validation | 993 | 990 |
+| Total | 4,986 | 4,988 |
+
+All evaluated pairs were filtered for compatibility with the same MTCNN preprocessing used by the AdaFace checker.
+
+Threshold selection was performed on the calibration split and then evaluated without re-fitting on the held-out validation split.
+
+At threshold **0.239** on the held-out validation set:
+
+- Accuracy: **96.02%**
+- Precision: **100.00%**
+- Recall: **92.04%**
+- F1: **95.86%**
+- False-positive rate (observed FAR): **0% (0/990 different-identity pairs)**
+- False-negative rate (FRR): **7.96% (79/993 same-identity pairs)**
+
+For comparison, the previous POC threshold of 0.400 produced validation accuracy of 95.36%, recall of 90.74%, F1 of 95.14%, with 0/990 observed false positives and 92/993 false negatives.
+
+### Why the threshold is fixed
+
+A QA threshold must remain stable while the current model/version is being evaluated. Otherwise, changing the threshold between generated videos would make QA decisions non-repeatable.
+
+Therefore:
+
+```text
+AdaFace model:       ir_50 / MS1MV2 checkpoint
+Face preprocessing:  MTCNN alignment
+Frozen threshold:    0.239
+QA operating point:  current POC v1
+```
+
+The threshold should **not** be changed per video or per test case.
+
+### When to recalibrate
+
+Recalibration is required only when there is a material change in the operating distribution or QA requirement, for example:
+
+- the face-recognition model/checkpoint changes;
+- face alignment/preprocessing changes;
+- the AI video-generation model changes substantially;
+- project-specific generated-face data shows a different score distribution;
+- the team changes the required false-accept/false-reject trade-off.
+
+A recalibration should use a new identity-disjoint calibration/validation split and preserve the same evaluation procedure.
+
+### Production limitation
+
+The current calibration is a strong benchmark-based POC operating point, but LFW consists of real photographs rather than the final project's generated Indian video faces. Before production deployment, the threshold should be revalidated on a sufficiently large, consented, project-specific dataset of generated video frames. Until then, **0.239 is the frozen threshold for this POC**, not a universal threshold for every face-generation system.
+
 ## Thresholds and Decision Mapping
 
 | Component | Threshold | Meaning |
